@@ -7,16 +7,11 @@ import (
 )
 
 func RegisterRoutes(handler *handlers.Handler) http.Handler {
-	// Create a root router
 	rootRouter := http.NewServeMux()
-
-	// Create versioned API routers
 	v1Router := http.NewServeMux()
 
 	// Register v1 routes
 	registerRoutesV1(v1Router, handler)
-
-	// Mount the versioned routers under their paths
 	rootRouter.Handle("/api/v1/", http.StripPrefix("/api/v1", v1Router))
 
 	return rootRouter

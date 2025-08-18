@@ -1,8 +1,11 @@
 package server
 
 import (
+	"context"
 	"log"
 	"net/http"
+
+	"ccms.com/api/internal/utils"
 )
 
 func RequestLoggerMiddleware(next http.Handler) http.HandlerFunc {
@@ -13,15 +16,33 @@ func RequestLoggerMiddleware(next http.Handler) http.HandlerFunc {
 }
 
 func RequireAuthMiddleware(next http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Check if the user is Authenticated
+	// return func(w http.ResponseWriter, r *http.Request) {
+	// 	// Check if the user is Authenticated
+	// 	token := r.Header.Get("Authorization")
+	// 	if token != "Bearer token" {
+	// 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	// 		return
+	// 	}
+	// 	next.ServeHTTP(w, r)
+	// }
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("Authorization")
-		if token != "Bearer token" {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if token == "" {
+			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
-	}
+
+		userID, err := utils.ValidateToken(token, jwtSecret)
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Add user ID to context
+		ctx := context.WithValue(r.Context(), "userID", userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+
 }
 
 type Middleware func(http.Handler) http.HandlerFunc
