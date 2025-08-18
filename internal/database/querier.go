@@ -9,23 +9,37 @@ import (
 )
 
 type Querier interface {
+	AddItemToMenuCategory(ctx context.Context, arg AddItemToMenuCategoryParams) error
 	CountDepartments(ctx context.Context) (int64, error)
 	CountEmployees(ctx context.Context) (int64, error)
 	CountPositions(ctx context.Context) (int64, error)
 	CountSearchEmployees(ctx context.Context, arg CountSearchEmployeesParams) (int64, error)
 	CreateDepartment(ctx context.Context, arg CreateDepartmentParams) (Department, error)
 	CreateEmployee(ctx context.Context, arg CreateEmployeeParams) (Employee, error)
+	CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error)
+	CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error)
 	CreatePosition(ctx context.Context, arg CreatePositionParams) (Position, error)
 	DeleteDepartment(ctx context.Context, id int32) error
 	DeleteEmployee(ctx context.Context, id int32) error
+	DeleteMenu(ctx context.Context, id int32) error
+	DeleteMenuItem(ctx context.Context, id int32) error
 	DeletePosition(ctx context.Context, id int32) error
+	FilterMenuItems(ctx context.Context, arg FilterMenuItemsParams) ([]MenuItem, error)
+	GetActiveMenuItems(ctx context.Context) ([]MenuItem, error)
+	GetActiveMenus(ctx context.Context) ([]Menu, error)
 	GetEmployeeById(ctx context.Context, id int32) (Employee, error)
+	GetMenuByID(ctx context.Context, id int32) (Menu, error)
+	GetMenuItemByID(ctx context.Context, id int32) (MenuItem, error)
+	GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsByCategoryParams) ([]MenuItem, error)
+	GetMenuItemsByIDs(ctx context.Context, dollar_1 []int32) ([]MenuItem, error)
 	ListDepartments(ctx context.Context) ([]Department, error)
 	ListEmployees(ctx context.Context, arg ListEmployeesParams) ([]Employee, error)
 	ListPositions(ctx context.Context) ([]Position, error)
 	SearchEmployees(ctx context.Context, arg SearchEmployeesParams) ([]Employee, error)
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) error
 	UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) (Employee, error)
+	UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error)
+	UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error)
 	UpdatePosition(ctx context.Context, arg UpdatePositionParams) error
 }
 

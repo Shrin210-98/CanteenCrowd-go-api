@@ -1,8 +1,8 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "./internal/database/sql/query.sql"
-    schema: "./internal/database/sql/schema.sql"
+    schema: "./internal/database/sql/schemas/*.sql"  
+    queries: "./internal/database/sql/queries/*.sql"
     gen:
       go:
         package: "database"
@@ -13,5 +13,6 @@ sql:
         emit_prepared_queries: true
         emit_interface: true
         emit_exact_table_names: false
+        emit_sql_as_comment: false
 
     
