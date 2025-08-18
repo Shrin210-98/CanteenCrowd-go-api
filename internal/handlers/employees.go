@@ -14,7 +14,6 @@ import (
 )
 
 func (h *Handler) ListEmployees(w http.ResponseWriter, r *http.Request) {
-	// Optional pagination parameters
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	if limit == 0 {
@@ -43,7 +42,6 @@ func (h *Handler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate required fields
 	if employeeData.FirstName == "" || employeeData.LastName == "" || employeeData.Email == "" {
 		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "First name, last name and email are required"})
 		return
@@ -118,10 +116,7 @@ func (h *Handler) GetEmployeeById(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) SearchEmployees(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
 	queryParams := r.URL.Query()
-
-	// Set up pagination defaults
 	limit, _ := strconv.Atoi(queryParams.Get("limit"))
 	offset, _ := strconv.Atoi(queryParams.Get("offset"))
 	if limit == 0 {

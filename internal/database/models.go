@@ -35,47 +35,20 @@ type Employee struct {
 	UpdatedAt             pgtype.Timestamp `json:"updatedAt"`
 }
 
-type Inventory struct {
-	ID                int32            `json:"id"`
-	ItemName          string           `json:"itemName"`
-	CategoryID        int32            `json:"categoryId"`
-	Quantity          pgtype.Numeric   `json:"quantity"`
-	Unit              string           `json:"unit"`
-	SupplierID        pgtype.Int4      `json:"supplierId"`
-	CostPerUnit       pgtype.Numeric   `json:"costPerUnit"`
-	ParLevel          pgtype.Numeric   `json:"parLevel"`
-	ReorderLevel      pgtype.Numeric   `json:"reorderLevel"`
-	LastRestockedDate pgtype.Date      `json:"lastRestockedDate"`
-	ExpirationDate    pgtype.Date      `json:"expirationDate"`
-	StorageLocation   pgtype.Text      `json:"storageLocation"`
-	IsActive          pgtype.Bool      `json:"isActive"`
-	Notes             pgtype.Text      `json:"notes"`
-	CreatedAt         pgtype.Timestamp `json:"createdAt"`
-	UpdatedAt         pgtype.Timestamp `json:"updatedAt"`
-}
-
-type InventoryCategory struct {
-	ID          int32       `json:"id"`
-	Name        string      `json:"name"`
-	Description pgtype.Text `json:"description"`
-}
-
-type InventoryTransaction struct {
-	ID              int32            `json:"id"`
-	InventoryID     int32            `json:"inventoryId"`
-	QuantityChange  pgtype.Numeric   `json:"quantityChange"`
-	TransactionType string           `json:"transactionType"`
-	TransactionDate pgtype.Timestamp `json:"transactionDate"`
-	EmployeeID      pgtype.Int4      `json:"employeeId"`
-	ReferenceID     pgtype.Int4      `json:"referenceId"`
-	Notes           pgtype.Text      `json:"notes"`
-}
-
 type Menu struct {
+	ID          int32            `json:"id"`
+	Name        string           `json:"name"`
+	Description pgtype.Text      `json:"description"`
+	IsActive    pgtype.Bool      `json:"isActive"`
+	Categories  []byte           `json:"categories"`
+	ValidFrom   pgtype.Timestamp `json:"validFrom"`
+	ValidTo     pgtype.Timestamp `json:"validTo"`
+}
+
+type MenuItem struct {
 	ID              int32            `json:"id"`
 	Name            string           `json:"name"`
 	Description     pgtype.Text      `json:"description"`
-	CategoryID      int32            `json:"categoryId"`
 	Price           pgtype.Numeric   `json:"price"`
 	Cost            pgtype.Numeric   `json:"cost"`
 	PreparationTime pgtype.Int4      `json:"preparationTime"`
@@ -88,60 +61,10 @@ type Menu struct {
 	UpdatedAt       pgtype.Timestamp `json:"updatedAt"`
 }
 
-type MenuCategory struct {
-	ID           int32       `json:"id"`
-	Name         string      `json:"name"`
-	Description  pgtype.Text `json:"description"`
-	DisplayOrder pgtype.Int4 `json:"displayOrder"`
-}
-
 type Position struct {
 	ID           int32       `json:"id"`
 	Title        string      `json:"title"`
 	Description  pgtype.Text `json:"description"`
 	Level        pgtype.Int4 `json:"level"`
 	IsManagement pgtype.Bool `json:"isManagement"`
-}
-
-type RecipeIngredient struct {
-	ID          int32          `json:"id"`
-	MenuItemID  int32          `json:"menuItemId"`
-	InventoryID int32          `json:"inventoryId"`
-	Quantity    pgtype.Numeric `json:"quantity"`
-	Unit        string         `json:"unit"`
-	Notes       pgtype.Text    `json:"notes"`
-}
-
-type Reservation struct {
-	ID              int32            `json:"id"`
-	CustomerName    string           `json:"customerName"`
-	CustomerPhone   string           `json:"customerPhone"`
-	CustomerEmail   pgtype.Text      `json:"customerEmail"`
-	PartySize       int32            `json:"partySize"`
-	ReservationTime pgtype.Timestamp `json:"reservationTime"`
-	Duration        pgtype.Int4      `json:"duration"`
-	Notes           pgtype.Text      `json:"notes"`
-	Status          pgtype.Text      `json:"status"`
-	TableAssignment pgtype.Text      `json:"tableAssignment"`
-	CreatedAt       pgtype.Timestamp `json:"createdAt"`
-}
-
-type Shift struct {
-	ID         int32            `json:"id"`
-	EmployeeID int32            `json:"employeeId"`
-	StartTime  pgtype.Timestamp `json:"startTime"`
-	EndTime    pgtype.Timestamp `json:"endTime"`
-	Role       string           `json:"role"`
-	Notes      pgtype.Text      `json:"notes"`
-}
-
-type Supplier struct {
-	ID            int32       `json:"id"`
-	Name          string      `json:"name"`
-	ContactPerson pgtype.Text `json:"contactPerson"`
-	Email         pgtype.Text `json:"email"`
-	Phone         pgtype.Text `json:"phone"`
-	Address       pgtype.Text `json:"address"`
-	Preferred     pgtype.Bool `json:"preferred"`
-	Notes         pgtype.Text `json:"notes"`
 }
