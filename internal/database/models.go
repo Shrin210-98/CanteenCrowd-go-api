@@ -68,3 +68,28 @@ type Position struct {
 	Level        pgtype.Int4 `json:"level"`
 	IsManagement pgtype.Bool `json:"isManagement"`
 }
+
+type RefreshToken struct {
+	ID        pgtype.UUID      `json:"id"`
+	UserID    pgtype.UUID      `json:"userId"`
+	Token     string           `json:"token"`
+	ExpiresAt pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+}
+
+type User struct {
+	ID                 pgtype.UUID        `json:"id"`
+	EmployeeID         int32              `json:"employeeId"`
+	Username           string             `json:"username"`
+	Email              string             `json:"email"`
+	PasswordHash       string             `json:"passwordHash"`
+	LastLogin          pgtype.Timestamptz `json:"lastLogin"`
+	LoginAttempts      pgtype.Int4        `json:"loginAttempts"`
+	IsLocked           pgtype.Bool        `json:"isLocked"`
+	LockedUntil        pgtype.Timestamptz `json:"lockedUntil"`
+	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
+	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
+	MustChangePassword pgtype.Bool        `json:"mustChangePassword"`
+	CreatedAt          pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt          pgtype.Timestamptz `json:"updatedAt"`
+}

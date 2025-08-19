@@ -9,15 +9,16 @@ import (
 	"ccms.com/api/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ProfileResponse defines the user profile data structure
 type ProfileResponse struct {
-	ID         uuid.UUID `json:"id"`
-	Username   string    `json:"username"`
-	Email      string    `json:"email"`
-	EmployeeID int32     `json:"employee_id"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         pgtype.UUID `json:"id"`
+	Username   string      `json:"username"`
+	Email      string      `json:"email"`
+	EmployeeID int32       `json:"employee_id"`
+	CreatedAt  time.Time   `json:"created_at"`
 }
 
 // GetProfile returns the authenticated user's profile
@@ -29,7 +30,7 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.db.GetUserByID(r.Context(), userID)
+	user, err := h.db.GetUserByID(r.Context(), pgtype.UUID{Bytes: userID, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "User not found", http.StatusNotFound)
@@ -72,7 +73,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current user data
-	currentUser, err := h.db.GetUserByID(r.Context(), userID)
+	currentUser, err := h.db.GetUserByID(r.Context(), pgtype.UUID{Bytes: userID, Valid: true})
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -80,7 +81,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	// Prepare update parameters
 	updateParams := database.UpdateUserParams{
-		ID: userID,
+		ID: pgtype.UUID{Bytes: userID, Valid: true},
 	}
 
 	// Only update fields that are provided in the request

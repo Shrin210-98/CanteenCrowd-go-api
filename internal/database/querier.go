@@ -6,6 +6,8 @@ package database
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -19,6 +21,7 @@ type Querier interface {
 	CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error)
 	CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error)
 	CreatePosition(ctx context.Context, arg CreatePositionParams) (Position, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteDepartment(ctx context.Context, id int32) error
 	DeleteEmployee(ctx context.Context, id int32) error
 	DeleteMenu(ctx context.Context, id int32) error
@@ -32,15 +35,23 @@ type Querier interface {
 	GetMenuItemByID(ctx context.Context, id int32) (MenuItem, error)
 	GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsByCategoryParams) ([]MenuItem, error)
 	GetMenuItemsByIDs(ctx context.Context, dollar_1 []int32) ([]MenuItem, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	IncrementLoginAttempts(ctx context.Context, id pgtype.UUID) error
 	ListDepartments(ctx context.Context) ([]Department, error)
 	ListEmployees(ctx context.Context, arg ListEmployeesParams) ([]Employee, error)
 	ListPositions(ctx context.Context) ([]Position, error)
+	ResetLoginAttempts(ctx context.Context, id pgtype.UUID) error
 	SearchEmployees(ctx context.Context, arg SearchEmployeesParams) ([]Employee, error)
+	SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) error
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) error
 	UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) (Employee, error)
 	UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error)
 	UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error)
+	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error
 	UpdatePosition(ctx context.Context, arg UpdatePositionParams) error
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)
