@@ -1,54 +1,114 @@
 -- name: CreateUser :one
-INSERT INTO users (
-    employee_id, username, email, password_hash
-) VALUES (
-    $1, $2, $3, $4
-) RETURNING *;
-
--- name: GetUserByUsername :one
-SELECT * FROM users WHERE username = $1 LIMIT 1;
-
--- name: GetUserByEmail :one
-SELECT * FROM users WHERE email = $1 LIMIT 1;
+INSERT INTO users (username, email, password_hash, user_type) VALUES ($1, $2, $3, $4)
+RETURNING *;
 
 -- name: GetUserByID :one
-SELECT * FROM users WHERE id = $1 LIMIT 1;
+SELECT * FROM users 
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: GetUserByUsername :one
+SELECT * FROM users 
+WHERE username = $1 AND deleted_at IS NULL;
+
+-- name: GetUserByEmail :one
+SELECT * FROM users 
+WHERE email = $1 AND deleted_at IS NULL;
 
 -- name: UpdateUser :one
-UPDATE users
+UPDATE users 
 SET 
     username = $2,
     email = $3,
+    last_login = $4,
+    login_attempts = $5,
+    is_locked = $6,
+    locked_until = $7,
+    password_reset_token = $8,
+    token_expiry = $9,
+    must_change_password = $10,
+    email_verified = $11,
+    mfa_enabled = $12,
+    last_password_change = $13,
+    user_type = $14,
     updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
 
--- name: IncrementLoginAttempts :exec
+-- name: UpdatePassword :one
 UPDATE users 
-SET login_attempts = login_attempts + 1,
-    is_locked = CASE WHEN login_attempts + 1 >= 5 THEN true ELSE false END,
-    locked_until = CASE WHEN login_attempts + 1 >= 5 THEN NOW() + INTERVAL '30 minutes' ELSE NULL END
-WHERE id = $1;
+SET 
+    password_hash = $2,
+    last_password_change = NOW(),
+    must_change_password = $3,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
 
--- name: ResetLoginAttempts :exec
+-- name: UpdateLoginAttempts :one
 UPDATE users 
-SET login_attempts = 0,
-    is_locked = false,
-    locked_until = NULL,
-    last_login = NOW()
-WHERE id = $1;
+SET 
+    login_attempts = $2,
+    is_locked = $3,
+    locked_until = $4,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
 
--- name: SetPasswordResetToken :exec
+-- name: SetPasswordResetToken :one
 UPDATE users 
-SET password_reset_token = $1,
-    token_expiry = $2
-WHERE email = $3;
+SET 
+    password_reset_token = $2,
+    token_expiry = $3,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
 
--- name: UpdatePassword :exec
+-- name: ClearPasswordResetToken :one
 UPDATE users 
-SET password_hash = $1,
+SET 
     password_reset_token = NULL,
     token_expiry = NULL,
-    must_change_password = $2,
     updated_at = NOW()
-WHERE id = $3;
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: VerifyEmail :one
+UPDATE users 
+SET 
+    email_verified = TRUE,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SoftDeleteUser :exec
+UPDATE users 
+SET 
+    deleted_at = NOW(),
+    updated_at = NOW()
+WHERE id = $1;
+
+-- name: ListUsers :many
+SELECT * FROM users 
+WHERE deleted_at IS NULL 
+ORDER BY created_at DESC;
+
+-- name: ListUsersByType :many
+SELECT * FROM users 
+WHERE user_type = $1 AND deleted_at IS NULL 
+ORDER BY created_at DESC;
+
+-- name: GetUserByResetToken :one
+SELECT * FROM users 
+WHERE password_reset_token = $1 AND deleted_at IS NULL;
+
+-- name: CheckUsernameExists :one
+SELECT EXISTS(
+    SELECT 1 FROM users 
+    WHERE username = $1 AND deleted_at IS NULL
+);
+
+-- name: CheckEmailExists :one
+SELECT EXISTS(
+    SELECT 1 FROM users 
+    WHERE email = $1 AND deleted_at IS NULL
+);

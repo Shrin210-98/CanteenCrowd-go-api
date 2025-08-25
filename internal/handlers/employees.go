@@ -58,9 +58,10 @@ func (h *Handler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
+	var id pgtype.UUID
+	err := id.Scan(r.PathValue("id"))
 	if err != nil {
-		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid employee ID"})
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid ID"})
 		return
 	}
 
@@ -70,8 +71,7 @@ func (h *Handler) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure the ID from path matches the body
-	employeeData.ID = int32(id)
+	employeeData.ID = id
 
 	employee, err := h.db.UpdateEmployee(r.Context(), employeeData)
 	if err != nil {
@@ -84,13 +84,14 @@ func (h *Handler) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteEmployee(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
+	var id pgtype.UUID
+	err := id.Scan(r.PathValue("id"))
 	if err != nil {
-		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid employee ID"})
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid ID"})
 		return
 	}
 
-	err = h.db.DeleteEmployee(r.Context(), int32(id))
+	err = h.db.DeleteEmployee(r.Context(), id)
 	if err != nil {
 		utils.JsonResponse(w, http.StatusInternalServerError, map[string]string{"message": "Failed to delete employee"})
 		return
@@ -100,13 +101,14 @@ func (h *Handler) DeleteEmployee(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetEmployeeById(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
+	var id pgtype.UUID
+	err := id.Scan(r.PathValue("id"))
 	if err != nil {
 		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid employee ID"})
 		return
 	}
 
-	employee, err := h.db.GetEmployeeById(r.Context(), int32(id))
+	employee, err := h.db.GetEmployeeById(r.Context(), id)
 	if err != nil {
 		utils.JsonResponse(w, http.StatusNotFound, map[string]string{"message": "Employee not found"})
 		return
@@ -127,20 +129,20 @@ func (h *Handler) SearchEmployees(w http.ResponseWriter, r *http.Request) {
 	filterParams := database.CountSearchEmployeesParams{
 		Column1: pgtype.Text{String: queryParams.Get("q"), Valid: queryParams.Get("q") != ""}, // Name search
 		// Populate other filter fields here, similar to your original code
-		DepartmentID: func() int32 {
-			if id := queryParams.Get("department_id"); id != "" {
-				val, _ := strconv.Atoi(id)
-				return int32(val)
-			}
-			return 0 // or appropriate default
-		}(),
-		PositionID: func() int32 {
-			if id := queryParams.Get("position_id"); id != "" {
-				val, _ := strconv.Atoi(id)
-				return int32(val)
-			}
-			return 0 // or appropriate default
-		}(),
+		// DepartmentID: func() int32 {
+		// 	if id := queryParams.Get("department_id"); id != "" {
+		// 		val, _ := strconv.Atoi(id)
+		// 		return int32(val)
+		// 	}
+		// 	return 0 // or appropriate default
+		// }(),
+		// PositionID: func() int32 {
+		// 	if id := queryParams.Get("position_id"); id != "" {
+		// 		val, _ := strconv.Atoi(id)
+		// 		return int32(val)
+		// 	}
+		// 	return 0 // or appropriate default
+		// }(),
 		IsActive: func() pgtype.Bool {
 			if val := queryParams.Get("is_active"); val != "" {
 				b, _ := strconv.ParseBool(val)

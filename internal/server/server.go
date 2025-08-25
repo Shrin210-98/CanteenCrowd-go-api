@@ -43,7 +43,7 @@ func NewServer() *http.Server {
 	// -- Middleware implementation --
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public Routes
-		if slices.Contains([]string{"register", "login"}, r.URL.Path) {
+		if slices.Contains([]string{"/api/v1/register", "/api/v1/login"}, r.URL.Path) {
 			MiddlewareChain(RequestLoggerMiddleware)(mux).ServeHTTP(w, r)
 			return
 		}

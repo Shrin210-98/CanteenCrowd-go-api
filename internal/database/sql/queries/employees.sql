@@ -2,10 +2,10 @@
 SELECT * FROM departments;
 
 -- name: CreateDepartment :one
-INSERT INTO departments (name, description, manager_id) VALUES ($1, $2, $3) RETURNING *;
+INSERT INTO departments (name, description) VALUES ($1, $2) RETURNING *;
 
 -- name: UpdateDepartment :exec
-UPDATE departments set name = $2, description = $3, manager_id = $4 WHERE id = $1;
+UPDATE departments set name = $2, description = $3 WHERE id = $1;
 
 -- name: DeleteDepartment :exec
 DELETE FROM departments WHERE id = $1;

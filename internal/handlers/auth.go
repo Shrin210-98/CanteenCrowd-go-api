@@ -7,6 +7,7 @@ import (
 
 	"ccms.com/api/internal/database"
 	"ccms.com/api/internal/utils"
+	"github.com/google/uuid"
 	// server "ccms.com/api/internal/server_v2"
 )
 
@@ -21,83 +22,95 @@ func NewHandler(querier database.Querier, jwtSecret string) *Handler {
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username   string `json:"username"`
-		Email      string `json:"email"`
-		Password   string `json:"password"`
-		EmployeeID int32  `json:"employee_id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid request"})
 		return
 	}
 
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
-		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"message": "Failed to hash password"})
 		return
 	}
 
 	user, err := h.db.CreateUser(r.Context(), database.CreateUserParams{
-		EmployeeID:   req.EmployeeID,
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: hashedPassword,
+		UserType:     "owner",
 	})
 
 	if err != nil {
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"data": user, "message": "Failed to Register owner user"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	responseData := map[string]any{
+		"id":        user.ID,
+		"username":  user.Username,
+		"email":     user.Email,
+		"lastLogin": user.LastLogin,
+		"userType":  user.UserType,
+		// "emailVerified": user.EmailVerified,
+		// "mfaEnabled":    user.MfaEnabled,
+		"createdAt": user.CreatedAt,
+		// "updatedAt":     user.UpdatedAt,
+	}
+	utils.JsonResponse(w, http.StatusCreated, map[string]any{"data": responseData, "message": "Successfully Registered the Owner"})
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var creds struct {
-		Username string `json:"username"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid Request"})
 		return
 	}
 
-	user, err := h.db.GetUserByUsername(r.Context(), creds.Username)
+	user, err := h.db.GetUserByEmail(r.Context(), creds.Email)
 	if err != nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Invalid credentials"})
 		return
 	}
 
-	if user.IsLocked && user.LockedUntil.Time.After(time.Now()) {
-		http.Error(w, "Account locked", http.StatusForbidden)
+	if user.IsLocked.Bool && user.LockedUntil.Time.After(time.Now()) {
+		utils.JsonResponse(w, http.StatusForbidden, map[string]any{"message": "Account locked"})
 		return
 	}
 
-	if !utils.CheckPassword(creds.Password, user.PasswordHash) {
-		h.db.IncrementLoginAttempts(r.Context(), user.ID)
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+	if !utils.CheckPasswordHash(creds.Password, user.PasswordHash) {
+		// h.db.IncrementLoginAttempts(r.Context(), user.ID)
+		utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Invalid credentials"})
 		return
 	}
 
-	h.db.ResetLoginAttempts(r.Context(), user.ID)
+	// h.db.ResetLoginAttempts(r.Context(), user.ID)
 
-	token, err := utils.GenerateTokens(user.ID, h.jwtSecret)
+	token, err := utils.GenerateTokens(uuid.UUID(user.ID.Bytes), h.jwtSecret)
 	if err != nil {
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"message": "Failed to generate token"})
 		return
 	}
 
-	response := struct {
-		Token string               `json:"token"`
-		User  database.UserAccount `json:"user"`
-	}{
-		Token: token,
-		User:  user,
+	responseData := map[string]any{
+		"id":        user.ID,
+		"username":  user.Username,
+		"email":     user.Email,
+		"lastLogin": user.LastLogin,
+		"userType":  user.UserType,
+		"token":     token,
+		// "emailVerified": user.EmailVerified,
+		// "mfaEnabled":    user.MfaEnabled,
+		"createdAt": user.CreatedAt,
+		// "updatedAt":     user.UpdatedAt,
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	utils.JsonResponse(w, http.StatusOK, map[string]any{"data": responseData, "message": "Succesfully Logged In"})
 }

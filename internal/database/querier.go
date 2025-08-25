@@ -12,6 +12,9 @@ import (
 
 type Querier interface {
 	AddItemToMenuCategory(ctx context.Context, arg AddItemToMenuCategoryParams) error
+	CheckEmailExists(ctx context.Context, email string) (bool, error)
+	CheckUsernameExists(ctx context.Context, username string) (bool, error)
+	ClearPasswordResetToken(ctx context.Context, id pgtype.UUID) (User, error)
 	CountDepartments(ctx context.Context) (int64, error)
 	CountEmployees(ctx context.Context) (int64, error)
 	CountPositions(ctx context.Context) (int64, error)
@@ -22,36 +25,40 @@ type Querier interface {
 	CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error)
 	CreatePosition(ctx context.Context, arg CreatePositionParams) (Position, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	DeleteDepartment(ctx context.Context, id int32) error
-	DeleteEmployee(ctx context.Context, id int32) error
+	DeleteDepartment(ctx context.Context, id pgtype.UUID) error
+	DeleteEmployee(ctx context.Context, id pgtype.UUID) error
 	DeleteMenu(ctx context.Context, id int32) error
 	DeleteMenuItem(ctx context.Context, id int32) error
-	DeletePosition(ctx context.Context, id int32) error
+	DeletePosition(ctx context.Context, id pgtype.UUID) error
 	FilterMenuItems(ctx context.Context, arg FilterMenuItemsParams) ([]MenuItem, error)
 	GetActiveMenuItems(ctx context.Context) ([]MenuItem, error)
 	GetActiveMenus(ctx context.Context) ([]Menu, error)
-	GetEmployeeById(ctx context.Context, id int32) (Employee, error)
+	GetEmployeeById(ctx context.Context, id pgtype.UUID) (Employee, error)
 	GetMenuByID(ctx context.Context, id int32) (Menu, error)
 	GetMenuItemByID(ctx context.Context, id int32) (MenuItem, error)
 	GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsByCategoryParams) ([]MenuItem, error)
 	GetMenuItemsByIDs(ctx context.Context, dollar_1 []int32) ([]MenuItem, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	GetUserByResetToken(ctx context.Context, passwordResetToken pgtype.Text) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
-	IncrementLoginAttempts(ctx context.Context, id pgtype.UUID) error
 	ListDepartments(ctx context.Context) ([]Department, error)
 	ListEmployees(ctx context.Context, arg ListEmployeesParams) ([]Employee, error)
 	ListPositions(ctx context.Context) ([]Position, error)
-	ResetLoginAttempts(ctx context.Context, id pgtype.UUID) error
+	ListUsers(ctx context.Context) ([]User, error)
+	ListUsersByType(ctx context.Context, userType string) ([]User, error)
 	SearchEmployees(ctx context.Context, arg SearchEmployeesParams) ([]Employee, error)
-	SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) error
+	SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) (User, error)
+	SoftDeleteUser(ctx context.Context, id pgtype.UUID) error
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) error
 	UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) (Employee, error)
+	UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemptsParams) (User, error)
 	UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error)
 	UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error)
-	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error
+	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) (User, error)
 	UpdatePosition(ctx context.Context, arg UpdatePositionParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	VerifyEmail(ctx context.Context, id pgtype.UUID) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

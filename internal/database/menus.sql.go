@@ -348,9 +348,8 @@ func (q *Queries) GetMenuItemByID(ctx context.Context, id int32) (MenuItem, erro
 }
 
 const getMenuItemsByCategory = `-- name: GetMenuItemsByCategory :many
-/* Extreme cases
- */
-
+/* -- Extreme cases --
+*/
 SELECT mi.id, mi.name, mi.description, mi.price, mi.cost, mi.preparation_time, mi.is_vegetarian, mi.is_vegan, mi.is_gluten_free, mi.is_active, mi.image_url, mi.created_at, mi.updated_at 
 FROM menu_items mi
 JOIN menus m ON mi.id = ANY(m.categories::jsonb->>$1::text::int[])

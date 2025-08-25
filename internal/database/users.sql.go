@@ -11,32 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-    employee_id, username, email, password_hash
-) VALUES (
-    $1, $2, $3, $4
-) RETURNING id, employee_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, created_at, updated_at
+const checkEmailExists = `-- name: CheckEmailExists :one
+SELECT EXISTS(
+    SELECT 1 FROM users 
+    WHERE email = $1 AND deleted_at IS NULL
+)
 `
 
-type CreateUserParams struct {
-	EmployeeID   int32  `json:"employeeId"`
-	Username     string `json:"username"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"passwordHash"`
+func (q *Queries) CheckEmailExists(ctx context.Context, email string) (bool, error) {
+	row := q.db.QueryRow(ctx, checkEmailExists, email)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser,
-		arg.EmployeeID,
-		arg.Username,
-		arg.Email,
-		arg.PasswordHash,
-	)
+const checkUsernameExists = `-- name: CheckUsernameExists :one
+SELECT EXISTS(
+    SELECT 1 FROM users 
+    WHERE username = $1 AND deleted_at IS NULL
+)
+`
+
+func (q *Queries) CheckUsernameExists(ctx context.Context, username string) (bool, error) {
+	row := q.db.QueryRow(ctx, checkUsernameExists, username)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const clearPasswordResetToken = `-- name: ClearPasswordResetToken :one
+UPDATE users 
+SET 
+    password_reset_token = NULL,
+    token_expiry = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+`
+
+func (q *Queries) ClearPasswordResetToken(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, clearPasswordResetToken, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.EmployeeID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -47,6 +64,54 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordResetToken,
 		&i.TokenExpiry,
 		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (username, email, password_hash, user_type) VALUES ($1, $2, $3, $4)
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+`
+
+type CreateUserParams struct {
+	Username     string `json:"username"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"passwordHash"`
+	UserType     string `json:"userType"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Username,
+		arg.Email,
+		arg.PasswordHash,
+		arg.UserType,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -54,7 +119,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, employee_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, created_at, updated_at FROM users WHERE email = $1 LIMIT 1
+SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE email = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -62,7 +128,6 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.EmployeeID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -73,6 +138,11 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordResetToken,
 		&i.TokenExpiry,
 		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -80,7 +150,8 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, employee_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, created_at, updated_at FROM users WHERE id = $1 LIMIT 1
+SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
@@ -88,7 +159,6 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.EmployeeID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -99,6 +169,42 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.PasswordResetToken,
 		&i.TokenExpiry,
 		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByResetToken = `-- name: GetUserByResetToken :one
+SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE password_reset_token = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) GetUserByResetToken(ctx context.Context, passwordResetToken pgtype.Text) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByResetToken, passwordResetToken)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -106,7 +212,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, employee_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, created_at, updated_at FROM users WHERE username = $1 LIMIT 1
+SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE username = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -114,7 +221,6 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.EmployeeID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -125,100 +231,128 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.PasswordResetToken,
 		&i.TokenExpiry,
 		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const incrementLoginAttempts = `-- name: IncrementLoginAttempts :exec
-UPDATE users 
-SET login_attempts = login_attempts + 1,
-    is_locked = CASE WHEN login_attempts + 1 >= 5 THEN true ELSE false END,
-    locked_until = CASE WHEN login_attempts + 1 >= 5 THEN NOW() + INTERVAL '30 minutes' ELSE NULL END
-WHERE id = $1
+const listUsers = `-- name: ListUsers :many
+SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE deleted_at IS NULL 
+ORDER BY created_at DESC
 `
 
-func (q *Queries) IncrementLoginAttempts(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, incrementLoginAttempts, id)
-	return err
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const resetLoginAttempts = `-- name: ResetLoginAttempts :exec
-UPDATE users 
-SET login_attempts = 0,
-    is_locked = false,
-    locked_until = NULL,
-    last_login = NOW()
-WHERE id = $1
+const listUsersByType = `-- name: ListUsersByType :many
+SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE user_type = $1 AND deleted_at IS NULL 
+ORDER BY created_at DESC
 `
 
-func (q *Queries) ResetLoginAttempts(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, resetLoginAttempts, id)
-	return err
+func (q *Queries) ListUsersByType(ctx context.Context, userType string) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersByType, userType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const setPasswordResetToken = `-- name: SetPasswordResetToken :exec
+const setPasswordResetToken = `-- name: SetPasswordResetToken :one
 UPDATE users 
-SET password_reset_token = $1,
-    token_expiry = $2
-WHERE email = $3
+SET 
+    password_reset_token = $2,
+    token_expiry = $3,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
 type SetPasswordResetTokenParams struct {
+	ID                 pgtype.UUID        `json:"id"`
 	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
 	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
-	Email              string             `json:"email"`
 }
 
-func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) error {
-	_, err := q.db.Exec(ctx, setPasswordResetToken, arg.PasswordResetToken, arg.TokenExpiry, arg.Email)
-	return err
-}
-
-const updatePassword = `-- name: UpdatePassword :exec
-UPDATE users 
-SET password_hash = $1,
-    password_reset_token = NULL,
-    token_expiry = NULL,
-    must_change_password = $2,
-    updated_at = NOW()
-WHERE id = $3
-`
-
-type UpdatePasswordParams struct {
-	PasswordHash       string      `json:"passwordHash"`
-	MustChangePassword pgtype.Bool `json:"mustChangePassword"`
-	ID                 pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
-	_, err := q.db.Exec(ctx, updatePassword, arg.PasswordHash, arg.MustChangePassword, arg.ID)
-	return err
-}
-
-const updateUser = `-- name: UpdateUser :one
-UPDATE users
-SET 
-    username = $2,
-    email = $3,
-    updated_at = NOW()
-WHERE id = $1
-RETURNING id, employee_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, created_at, updated_at
-`
-
-type UpdateUserParams struct {
-	ID       pgtype.UUID `json:"id"`
-	Username string      `json:"username"`
-	Email    string      `json:"email"`
-}
-
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.Username, arg.Email)
+func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) (User, error) {
+	row := q.db.QueryRow(ctx, setPasswordResetToken, arg.ID, arg.PasswordResetToken, arg.TokenExpiry)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.EmployeeID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -229,6 +363,230 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.PasswordResetToken,
 		&i.TokenExpiry,
 		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const softDeleteUser = `-- name: SoftDeleteUser :exec
+UPDATE users 
+SET 
+    deleted_at = NOW(),
+    updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteUser, id)
+	return err
+}
+
+const updateLoginAttempts = `-- name: UpdateLoginAttempts :one
+UPDATE users 
+SET 
+    login_attempts = $2,
+    is_locked = $3,
+    locked_until = $4,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+`
+
+type UpdateLoginAttemptsParams struct {
+	ID            pgtype.UUID        `json:"id"`
+	LoginAttempts pgtype.Int4        `json:"loginAttempts"`
+	IsLocked      pgtype.Bool        `json:"isLocked"`
+	LockedUntil   pgtype.Timestamptz `json:"lockedUntil"`
+}
+
+func (q *Queries) UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemptsParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateLoginAttempts,
+		arg.ID,
+		arg.LoginAttempts,
+		arg.IsLocked,
+		arg.LockedUntil,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePassword = `-- name: UpdatePassword :one
+UPDATE users 
+SET 
+    password_hash = $2,
+    last_password_change = NOW(),
+    must_change_password = $3,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+`
+
+type UpdatePasswordParams struct {
+	ID                 pgtype.UUID `json:"id"`
+	PasswordHash       string      `json:"passwordHash"`
+	MustChangePassword pgtype.Bool `json:"mustChangePassword"`
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) (User, error) {
+	row := q.db.QueryRow(ctx, updatePassword, arg.ID, arg.PasswordHash, arg.MustChangePassword)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users 
+SET 
+    username = $2,
+    email = $3,
+    last_login = $4,
+    login_attempts = $5,
+    is_locked = $6,
+    locked_until = $7,
+    password_reset_token = $8,
+    token_expiry = $9,
+    must_change_password = $10,
+    email_verified = $11,
+    mfa_enabled = $12,
+    last_password_change = $13,
+    user_type = $14,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+`
+
+type UpdateUserParams struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Username           string             `json:"username"`
+	Email              string             `json:"email"`
+	LastLogin          pgtype.Timestamptz `json:"lastLogin"`
+	LoginAttempts      pgtype.Int4        `json:"loginAttempts"`
+	IsLocked           pgtype.Bool        `json:"isLocked"`
+	LockedUntil        pgtype.Timestamptz `json:"lockedUntil"`
+	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
+	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
+	MustChangePassword pgtype.Bool        `json:"mustChangePassword"`
+	EmailVerified      pgtype.Bool        `json:"emailVerified"`
+	MfaEnabled         pgtype.Bool        `json:"mfaEnabled"`
+	LastPasswordChange pgtype.Timestamptz `json:"lastPasswordChange"`
+	UserType           string             `json:"userType"`
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUser,
+		arg.ID,
+		arg.Username,
+		arg.Email,
+		arg.LastLogin,
+		arg.LoginAttempts,
+		arg.IsLocked,
+		arg.LockedUntil,
+		arg.PasswordResetToken,
+		arg.TokenExpiry,
+		arg.MustChangePassword,
+		arg.EmailVerified,
+		arg.MfaEnabled,
+		arg.LastPasswordChange,
+		arg.UserType,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const verifyEmail = `-- name: VerifyEmail :one
+UPDATE users 
+SET 
+    email_verified = TRUE,
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+`
+
+func (q *Queries) VerifyEmail(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, verifyEmail, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

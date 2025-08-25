@@ -21,8 +21,7 @@ type ProfileResponse struct {
 	CreatedAt  time.Time   `json:"created_at"`
 }
 
-// GetProfile returns the authenticated user's profile
-func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context (set by auth middleware)
 	userID, ok := r.Context().Value("userID").(uuid.UUID)
 	if !ok {
@@ -41,11 +40,10 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ProfileResponse{
-		ID:         user.ID,
-		Username:   user.Username,
-		Email:      user.Email,
-		EmployeeID: user.EmployeeID,
-		CreatedAt:  user.CreatedAt.Time,
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt.Time,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -115,11 +113,10 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ProfileResponse{
-		ID:         updatedUser.ID,
-		Username:   updatedUser.Username,
-		Email:      updatedUser.Email,
-		EmployeeID: updatedUser.EmployeeID,
-		CreatedAt:  updatedUser.CreatedAt.Time,
+		ID:        updatedUser.ID,
+		Username:  updatedUser.Username,
+		Email:     updatedUser.Email,
+		CreatedAt: updatedUser.CreatedAt.Time,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
