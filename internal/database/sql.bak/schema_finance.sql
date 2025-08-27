@@ -6,7 +6,7 @@ CREATE TABLE chart_of_accounts (
 );
 
 CREATE TABLE journal_entries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
     description TEXT,
     created_at TIMESTAMP DEFAULT NOW()

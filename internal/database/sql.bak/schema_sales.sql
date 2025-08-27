@@ -1,5 +1,5 @@
 CREATE TABLE customers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     contact_email TEXT,
     contact_phone TEXT,
@@ -8,7 +8,7 @@ CREATE TABLE customers (
 );
 
 CREATE TABLE sales_orders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id UUID NOT NULL REFERENCES customers(id),
     order_date DATE NOT NULL DEFAULT CURRENT_DATE,
     status TEXT NOT NULL CHECK (status IN ('Pending', 'Confirmed', 'Shipped', 'Completed', 'Cancelled')),

@@ -1,5 +1,5 @@
 CREATE TABLE vendors (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     contact_email TEXT,
     contact_phone TEXT,
@@ -7,7 +7,7 @@ CREATE TABLE vendors (
 );
 
 CREATE TABLE purchase_orders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     vendor_id UUID NOT NULL REFERENCES vendors(id),
     order_date DATE NOT NULL DEFAULT CURRENT_DATE,
     status TEXT NOT NULL CHECK (status IN ('Pending', 'Approved', 'Received', 'Closed', 'Cancelled')),

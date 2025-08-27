@@ -1,5 +1,5 @@
 CREATE TABLE products (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     sku TEXT UNIQUE NOT NULL,
     description TEXT,
@@ -10,14 +10,14 @@ CREATE TABLE products (
 );
 
 CREATE TABLE warehouses (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     location TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE stock_levels (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
     product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
