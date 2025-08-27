@@ -36,7 +36,18 @@ CREATE TABLE user_profiles (
     full_name TEXT,
     phone TEXT,
     avatar_url TEXT,
-    timezone TEXT
+    timezone TEXT,
+    permission JSONB DEFAULT '{
+        "resources": {
+            "system": { "view": true, "restart": true, "backup": true, "shutdown": true },
+            "users": { "view": true, "create": true, "edit": true, "delete": true },
+            "hr": { "view": true, "create": true, "export": true },
+            "finance": { "view": true, "create": true, "edit": true, "delete": true }
+        },
+        "routes": {
+            "/*": true,
+        }
+    }'::jsonb
 );
 
 -- CREATE INDEX idx_users_reset_token ON users(password_reset_token);
@@ -57,6 +68,17 @@ CREATE TABLE refresh_tokens (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE roles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    permission_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_default BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
