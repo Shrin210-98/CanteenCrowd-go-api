@@ -18,6 +18,8 @@ func RegisterRoutes(handler *handlers.Handler) http.Handler {
 
 func registerRoutesV1(mux *http.ServeMux, handler *handlers.Handler) {
 
+	mux.HandleFunc("GET    /health", handler.DatabaseHealth)
+
 	mux.HandleFunc("POST   /login", handler.Login)
 	mux.HandleFunc("POST   /register", handler.Register)
 

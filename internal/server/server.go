@@ -38,12 +38,12 @@ func NewServer() *http.Server {
 	queries := database.New(conn)
 
 	// -- Routes --
-	mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret))
+	mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret, conn))
 
 	// -- Middleware implementation --
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public Routes
-		if slices.Contains([]string{"/api/v1/register", "/api/v1/login"}, r.URL.Path) {
+		if slices.Contains([]string{"/api/v1/health", "/api/v1/register", "/api/v1/login"}, r.URL.Path) {
 			MiddlewareChain(RequestLoggerMiddleware)(mux).ServeHTTP(w, r)
 			return
 		}

@@ -8,15 +8,17 @@ import (
 	"ccms.com/api/internal/database"
 	"ccms.com/api/internal/utils"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	// server "ccms.com/api/internal/server_v2"
 )
 
 type Handler struct {
 	db        database.Querier
+	Conn      *pgx.Conn
 	jwtSecret string
 }
 
-func NewHandler(querier database.Querier, jwtSecret string) *Handler {
+func NewHandler(querier database.Querier, jwtSecret string, conn *pgx.Conn) *Handler {
 	return &Handler{db: querier, jwtSecret: jwtSecret}
 }
 

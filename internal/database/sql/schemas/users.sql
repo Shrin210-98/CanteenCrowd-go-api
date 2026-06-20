@@ -37,16 +37,12 @@ CREATE TABLE user_profiles (
     phone TEXT,
     avatar_url TEXT,
     timezone TEXT,
-    permission JSONB DEFAULT '{
-        "resources": {
-            "system": { "view": true, "restart": true, "backup": true, "shutdown": true },
-            "users": { "view": true, "create": true, "edit": true, "delete": true },
-            "hr": { "view": true, "create": true, "export": true },
-            "finance": { "view": true, "create": true, "edit": true, "delete": true }
-        },
-        "routes": {
-            "/*": true,
-        }
+    permissions JSONB DEFAULT '{
+            "system": { "index": true, "restart": true, "backup": true, "shutdown": true },
+            "dashboard" : {"index" : true}
+            "users": { "index": true, "view": true, "add": true, "edit": true, "delete": true },
+            "employees": { "index": true, "view": true, "add": true, "archive": true },
+            "clients": { "index": true, "view": true, "add": true, "edit": true, "delete": true }
     }'::jsonb
 );
 

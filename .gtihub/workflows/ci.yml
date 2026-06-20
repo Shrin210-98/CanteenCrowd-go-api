@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.24.3' # Specify the Go version
+
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Build
+        run: go build -o main ./cmd/api
+
+      - name: Run tests
+        run: go test ./... -v
+
+      - name: Build Docker image
+        run: |
+          docker build -t my-go-app .
+
+      - name: Push Docker image
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          docker tag my-go-app:latest my-docker-repo/my-go-app:latest
+          docker push my-docker-repo/my-go-app:latest
+
+      - name: Deploy to AWS
+        run: |
+          # Add your deployment script here
+          echo "Deploying to AWS..."
+
+      # - name: Push Docker image
+      #   run: docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH (runs docker-compose on remote)
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}           # e.g. ubuntu, ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}             # private key (PEM)
+          port: ${{ secrets.EC2_SSH_PORT }}           # optional, default 22
+          # set strict to false if you don't want strict host key checking
+          strict: false
+          script: |
+            set -e
+            cd ${{ secrets.REMOTE_COMPOSE_PATH }}    # path on EC2 where docker-compose.yml lives
+            # ensure we can pull private images (login using secrets expanded here)
+            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+            docker-compose pull
+            docker-compose up -d --remove-orphans
+            docker image prune -f
