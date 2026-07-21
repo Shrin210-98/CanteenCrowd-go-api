@@ -3,10 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"ccms.com/api/internal/database"
 	"ccms.com/api/internal/utils"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (h *Handler) ListPositions(w http.ResponseWriter, r *http.Request) {
@@ -56,13 +56,14 @@ func (h *Handler) UpdatePosition(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeletePosition(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
+	var id pgtype.UUID
+	err := id.Scan(r.PathValue("id"))
 	if err != nil {
 		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid ID"})
 		return
 	}
 
-	err = h.db.DeletePosition(r.Context(), int32(id))
+	err = h.db.DeletePosition(r.Context(), id)
 	if err != nil {
 		utils.JsonResponse(w, http.StatusInternalServerError, map[string]string{"message": "Position doesn't exist"})
 		return

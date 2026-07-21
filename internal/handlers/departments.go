@@ -3,10 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"ccms.com/api/internal/database"
 	"ccms.com/api/internal/utils"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (h *Handler) ListDepartments(w http.ResponseWriter, r *http.Request) {
@@ -35,8 +35,7 @@ func (h *Handler) CreateDepartment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.JsonResponse(w, http.StatusCreated,
-		map[string]any{"data": author, "message": "Successfully Created Department"})
+	utils.JsonResponse(w, http.StatusCreated, map[string]any{"data": author, "message": "Successfully Created Department"})
 }
 
 func (h *Handler) UpdateDepartment(w http.ResponseWriter, r *http.Request) {
@@ -56,13 +55,13 @@ func (h *Handler) UpdateDepartment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteDepartment(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
+	var id pgtype.UUID
+	if err := id.Scan(r.PathValue("id")); err != nil {
 		utils.JsonResponse(w, http.StatusBadRequest, map[string]string{"message": "Invalid ID"})
 		return
 	}
 
-	err = h.db.DeleteDepartment(r.Context(), int32(id))
+	err := h.db.DeleteDepartment(r.Context(), id)
 	if err != nil {
 		utils.JsonResponse(w, http.StatusInternalServerError, map[string]string{"message": "Department doesn't exist"})
 		return

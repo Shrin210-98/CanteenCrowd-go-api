@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,12 +18,13 @@ import (
 )
 
 var (
-	dbName   = os.Getenv("DB_DATABASE")
-	password = os.Getenv("DB_PASSWORD")
-	username = os.Getenv("DB_USERNAME")
-	port     = os.Getenv("DB_PORT")
-	host     = os.Getenv("DB_HOST")
-	schema   = os.Getenv("DB_SCHEMA")
+	dbName    = os.Getenv("DB_DATABASE")
+	password  = os.Getenv("DB_PASSWORD")
+	username  = os.Getenv("DB_USERNAME")
+	port      = os.Getenv("DB_PORT")
+	host      = os.Getenv("DB_HOST")
+	schema    = os.Getenv("DB_SCHEMA")
+	jwtSecret = os.Getenv("JWT_SECRET")
 )
 
 func NewServer() *http.Server {
@@ -36,15 +38,16 @@ func NewServer() *http.Server {
 	queries := database.New(conn)
 
 	// -- Routes --
-	mux := RegisterRoutes(handlers.NewHandler(queries))
+	mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret))
 
 	// -- Middleware implementation --
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		if path == "/register" || path == "/login" {
+		// Public Routes
+		if slices.Contains([]string{"/api/v1/register", "/api/v1/login"}, r.URL.Path) {
 			MiddlewareChain(RequestLoggerMiddleware)(mux).ServeHTTP(w, r)
 			return
 		}
+		// Protected Routes with Authenticaction
 		MiddlewareChain(RequestLoggerMiddleware, RequireAuthMiddleware)(mux).ServeHTTP(w, r)
 	})
 

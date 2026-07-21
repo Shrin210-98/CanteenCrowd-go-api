@@ -9,14 +9,16 @@ import (
 )
 
 type Department struct {
-	ID          int32       `json:"id"`
+	ID          pgtype.UUID `json:"id"`
+	OwnerID     pgtype.UUID `json:"ownerId"`
 	Name        string      `json:"name"`
 	Description pgtype.Text `json:"description"`
-	ManagerID   pgtype.Int4 `json:"managerId"`
 }
 
 type Employee struct {
-	ID                    int32            `json:"id"`
+	ID                    pgtype.UUID      `json:"id"`
+	UserID                pgtype.UUID      `json:"userId"`
+	OwnerID               pgtype.UUID      `json:"ownerId"`
 	FirstName             string           `json:"firstName"`
 	LastName              string           `json:"lastName"`
 	Email                 string           `json:"email"`
@@ -24,8 +26,8 @@ type Employee struct {
 	Address               pgtype.Text      `json:"address"`
 	HireDate              pgtype.Date      `json:"hireDate"`
 	TerminationDate       pgtype.Date      `json:"terminationDate"`
-	PositionID            int32            `json:"positionId"`
-	DepartmentID          int32            `json:"departmentId"`
+	PositionID            pgtype.UUID      `json:"positionId"`
+	DepartmentID          pgtype.UUID      `json:"departmentId"`
 	Salary                pgtype.Numeric   `json:"salary"`
 	EmergencyContactName  pgtype.Text      `json:"emergencyContactName"`
 	EmergencyContactPhone pgtype.Text      `json:"emergencyContactPhone"`
@@ -62,9 +64,58 @@ type MenuItem struct {
 }
 
 type Position struct {
-	ID           int32       `json:"id"`
+	ID           pgtype.UUID `json:"id"`
+	OwnerID      pgtype.UUID `json:"ownerId"`
 	Title        string      `json:"title"`
 	Description  pgtype.Text `json:"description"`
 	Level        pgtype.Int4 `json:"level"`
 	IsManagement pgtype.Bool `json:"isManagement"`
+}
+
+type RefreshToken struct {
+	ID        pgtype.UUID      `json:"id"`
+	UserID    pgtype.UUID      `json:"userId"`
+	Token     string           `json:"token"`
+	ExpiresAt pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+}
+
+type User struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Username           string             `json:"username"`
+	Email              string             `json:"email"`
+	PasswordHash       string             `json:"passwordHash"`
+	LastLogin          pgtype.Timestamptz `json:"lastLogin"`
+	LoginAttempts      pgtype.Int4        `json:"loginAttempts"`
+	IsLocked           pgtype.Bool        `json:"isLocked"`
+	LockedUntil        pgtype.Timestamptz `json:"lockedUntil"`
+	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
+	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
+	MustChangePassword pgtype.Bool        `json:"mustChangePassword"`
+	EmailVerified      pgtype.Bool        `json:"emailVerified"`
+	MfaEnabled         pgtype.Bool        `json:"mfaEnabled"`
+	LastPasswordChange pgtype.Timestamptz `json:"lastPasswordChange"`
+	UserType           string             `json:"userType"`
+	DeletedAt          pgtype.Timestamptz `json:"deletedAt"`
+	CreatedAt          pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt          pgtype.Timestamptz `json:"updatedAt"`
+}
+
+type UserProfile struct {
+	ID        pgtype.UUID `json:"id"`
+	UserID    pgtype.UUID `json:"userId"`
+	FullName  pgtype.Text `json:"fullName"`
+	Phone     pgtype.Text `json:"phone"`
+	AvatarUrl pgtype.Text `json:"avatarUrl"`
+	Timezone  pgtype.Text `json:"timezone"`
+}
+
+type UserToken struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"userId"`
+	Token     string             `json:"token"`
+	Type      string             `json:"type"`
+	ExpiresAt pgtype.Timestamptz `json:"expiresAt"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UsedAt    pgtype.Timestamptz `json:"usedAt"`
 }
