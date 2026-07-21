@@ -4,14 +4,16 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"ccms.com/api/internal/utils"
 )
 
 func RequestLoggerMiddleware(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("method %s, path: %s", r.Method, r.URL.Path)
+		start := time.Now()
 		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.RequestURI, time.Since(start))
 	}
 }
 
