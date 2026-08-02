@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Test & Coverage
+.coverage
+*.out
+test_coverage.txt
+
+# Build artifacts
+main.exe
+tmp/
+
+# Air (hot reload)
+.air.toml
+tmp_build/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+LICENSE
+
+# Makefile
+Makefile
+
+# Logs
+*.log
+build-errors.log
+
+# Environment
+.env.example
+.env.local

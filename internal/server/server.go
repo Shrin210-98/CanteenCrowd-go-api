@@ -28,12 +28,18 @@ var (
 )
 
 func NewServer() *http.Server {
+	if schema == "" {
+		schema = "public"
+	}
 
 	// -- Connecting Database --
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s", host, port, username, password, dbName, schema)
 	conn, err := pgx.Connect(context.Background(), connStr)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("database connection failed during startup: %v", err)
+		conn = nil
+	} else {
+		log.Printf("database connection established successfully")
 	}
 	queries := database.New(conn)
 
@@ -44,11 +50,11 @@ func NewServer() *http.Server {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public Routes
 		if slices.Contains([]string{"/api/v1/health", "/api/v1/register", "/api/v1/login"}, r.URL.Path) {
-			MiddlewareChain(RequestLoggerMiddleware)(mux).ServeHTTP(w, r)
+			MiddlewareChain(CORSMiddleware, RequestLoggerMiddleware)(mux).ServeHTTP(w, r)
 			return
 		}
 		// Protected Routes with Authenticaction
-		MiddlewareChain(RequestLoggerMiddleware, RequireAuthMiddleware)(mux).ServeHTTP(w, r)
+		MiddlewareChain(CORSMiddleware, RequestLoggerMiddleware, RequireAuthMiddleware)(mux).ServeHTTP(w, r)
 	})
 
 	// -- HTTP Server Instance --

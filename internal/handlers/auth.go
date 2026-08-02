@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -19,7 +21,7 @@ type Handler struct {
 }
 
 func NewHandler(querier database.Querier, jwtSecret string, conn *pgx.Conn) *Handler {
-	return &Handler{db: querier, jwtSecret: jwtSecret}
+	return &Handler{db: querier, jwtSecret: jwtSecret, Conn: conn}
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -34,12 +36,16 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Register request received: username=%s email=%s", req.Username, req.Email)
+
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
+		log.Printf("Register password hashing failed: %v", err)
 		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"message": "Failed to hash password"})
 		return
 	}
 
+	log.Printf("Register attempting DB insert for user: %s", req.Username)
 	user, err := h.db.CreateUser(r.Context(), database.CreateUserParams{
 		Username:     req.Username,
 		Email:        req.Email,
@@ -48,9 +54,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"data": user, "message": "Failed to Register owner user"})
+		log.Printf("Register DB insert failed: %v", err)
+		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"data": user, "message": fmt.Sprintf("Failed to Register owner user: %v", err)})
 		return
 	}
+
+	log.Printf("Register success: %+v", user)
 
 	responseData := map[string]any{
 		"id":        user.ID,
@@ -90,7 +99,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if !utils.CheckPasswordHash(creds.Password, user.PasswordHash) {
 		// h.db.IncrementLoginAttempts(r.Context(), user.ID)
-		utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Invalid credentials"})
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid credentials"})
 		return
 	}
 
