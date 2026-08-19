@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 
@@ -33,18 +33,44 @@ func NewServer() *http.Server {
 	}
 
 	// -- Connecting Database --
+	// connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s", host, port, username, password, dbName, schema)
+	// conn, err := pgx.Connect(context.Background(), connStr)
+	// if err != nil {
+	// 	log.Printf("database connection failed during startup: %v", err)
+	// 	conn = nil
+	// } else {
+	// 	log.Printf("database connection established successfully")
+	// }
+	// queries := database.New(conn)
+	// // -- Routes --
+	// mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret, conn))
+
+	// -- Connecting Database Pool --
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s", host, port, username, password, dbName, schema)
-	conn, err := pgx.Connect(context.Background(), connStr)
+
+	// Create connection pool
+	pool, err := pgxpool.New(context.Background(), connStr)
 	if err != nil {
 		log.Printf("database connection failed during startup: %v", err)
-		conn = nil
+		pool = nil
 	} else {
-		log.Printf("database connection established successfully")
+		// Test the connection
+		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := pool.Ping(pingCtx); err != nil {
+			log.Printf("database ping failed: %v", err)
+			pool.Close()
+			pool = nil
+		} else {
+			log.Printf("database connection pool established successfully")
+		}
 	}
-	queries := database.New(conn)
+
+	queries := database.New(pool)
 
 	// -- Routes --
-	mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret, conn))
+	mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret, pool))
 
 	// -- Middleware implementation --
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

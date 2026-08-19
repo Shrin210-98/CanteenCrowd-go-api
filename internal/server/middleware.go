@@ -57,7 +57,7 @@ func RequireAuthMiddleware(next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authorizationHeader := r.Header.Get("Authorization")
 		if authorizationHeader == "" {
-			utils.JsonResponse(w, http.StatusUnauthorized, map[string]string{"message": "Authorization header required"})
+			utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Authorization header required"})
 			return
 		}
 
@@ -68,17 +68,18 @@ func RequireAuthMiddleware(next http.Handler) http.HandlerFunc {
 		}
 
 		if token == "" {
-			utils.JsonResponse(w, http.StatusUnauthorized, map[string]string{"message": "Authorization token required"})
+			utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Authorization token required"})
 			return
 		}
 
-		userID, err := utils.ValidateToken(token, jwtSecret)
+		userID, tenantID, err := utils.ValidateToken(token, jwtSecret)
 		if err != nil {
-			utils.JsonResponse(w, http.StatusUnauthorized, map[string]string{"message": "Invalid token"})
+			utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Invalid token"})
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx = context.WithValue(ctx, "tenantID", tenantID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

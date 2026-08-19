@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -47,9 +48,9 @@ WHERE id = $3
 `
 
 type AddItemToMenuCategoryParams struct {
-	Column1    []byte `json:"column1"`
-	Categories []byte `json:"categories"`
-	ID         int32  `json:"id"`
+	Column1    json.RawMessage `json:"column1"`
+	Categories json.RawMessage `json:"categories"`
+	ID         int32           `json:"id"`
 }
 
 func (q *Queries) AddItemToMenuCategory(ctx context.Context, arg AddItemToMenuCategoryParams) error {
@@ -65,8 +66,8 @@ RETURNING id, name, description, is_active, categories, valid_from, valid_to
 
 type CreateMenuParams struct {
 	Name        string           `json:"name"`
-	Description pgtype.Text      `json:"description"`
-	Categories  []byte           `json:"categories"`
+	Description *string          `json:"description"`
+	Categories  json.RawMessage  `json:"categories"`
 	ValidFrom   pgtype.Timestamp `json:"validFrom"`
 	ValidTo     pgtype.Timestamp `json:"validTo"`
 }
@@ -104,14 +105,14 @@ RETURNING id, name, description, price, cost, preparation_time, is_vegetarian, i
 
 type CreateMenuItemParams struct {
 	Name            string         `json:"name"`
-	Description     pgtype.Text    `json:"description"`
+	Description     *string        `json:"description"`
 	Price           pgtype.Numeric `json:"price"`
 	Cost            pgtype.Numeric `json:"cost"`
 	PreparationTime pgtype.Int4    `json:"preparationTime"`
 	IsVegetarian    pgtype.Bool    `json:"isVegetarian"`
 	IsVegan         pgtype.Bool    `json:"isVegan"`
 	IsGlutenFree    pgtype.Bool    `json:"isGlutenFree"`
-	ImageUrl        pgtype.Text    `json:"imageUrl"`
+	ImageUrl        *string        `json:"imageUrl"`
 }
 
 func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (MenuItem, error) {
@@ -202,7 +203,7 @@ func (q *Queries) FilterMenuItems(ctx context.Context, arg FilterMenuItemsParams
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MenuItem
+	items := []MenuItem{}
 	for rows.Next() {
 		var i MenuItem
 		if err := rows.Scan(
@@ -240,7 +241,7 @@ func (q *Queries) GetActiveMenuItems(ctx context.Context) ([]MenuItem, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MenuItem
+	items := []MenuItem{}
 	for rows.Next() {
 		var i MenuItem
 		if err := rows.Scan(
@@ -281,7 +282,7 @@ func (q *Queries) GetActiveMenus(ctx context.Context) ([]Menu, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Menu
+	items := []Menu{}
 	for rows.Next() {
 		var i Menu
 		if err := rows.Scan(
@@ -367,7 +368,7 @@ func (q *Queries) GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsBy
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MenuItem
+	items := []MenuItem{}
 	for rows.Next() {
 		var i MenuItem
 		if err := rows.Scan(
@@ -405,7 +406,7 @@ func (q *Queries) GetMenuItemsByIDs(ctx context.Context, dollar_1 []int32) ([]Me
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MenuItem
+	items := []MenuItem{}
 	for rows.Next() {
 		var i MenuItem
 		if err := rows.Scan(
@@ -449,8 +450,8 @@ RETURNING id, name, description, is_active, categories, valid_from, valid_to
 type UpdateMenuParams struct {
 	ID          int32            `json:"id"`
 	Name        string           `json:"name"`
-	Description pgtype.Text      `json:"description"`
-	Categories  []byte           `json:"categories"`
+	Description *string          `json:"description"`
+	Categories  json.RawMessage  `json:"categories"`
 	IsActive    pgtype.Bool      `json:"isActive"`
 	ValidFrom   pgtype.Timestamp `json:"validFrom"`
 	ValidTo     pgtype.Timestamp `json:"validTo"`
@@ -500,7 +501,7 @@ RETURNING id, name, description, price, cost, preparation_time, is_vegetarian, i
 type UpdateMenuItemParams struct {
 	ID              int32          `json:"id"`
 	Name            string         `json:"name"`
-	Description     pgtype.Text    `json:"description"`
+	Description     *string        `json:"description"`
 	Price           pgtype.Numeric `json:"price"`
 	Cost            pgtype.Numeric `json:"cost"`
 	PreparationTime pgtype.Int4    `json:"preparationTime"`
@@ -508,7 +509,7 @@ type UpdateMenuItemParams struct {
 	IsVegan         pgtype.Bool    `json:"isVegan"`
 	IsGlutenFree    pgtype.Bool    `json:"isGlutenFree"`
 	IsActive        pgtype.Bool    `json:"isActive"`
-	ImageUrl        pgtype.Text    `json:"imageUrl"`
+	ImageUrl        *string        `json:"imageUrl"`
 }
 
 func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error) {

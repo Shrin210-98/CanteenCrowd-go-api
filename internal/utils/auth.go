@@ -27,33 +27,54 @@ func CheckPasswordHash(password, hash string) bool {
 // 	return base64.URLEncoding.EncodeToString(bytes)
 // }
 
-func GenerateTokens(userID uuid.UUID, jwtSecret string) (string, error) {
-	claims := jwt.RegisteredClaims{
-		Subject:   userID.String(),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
+type CustomClaims struct {
+	TenantID string `json:"tenantID"`
+	UserType string `json:"userType,omitempty"`
+	jwt.RegisteredClaims
+}
+
+func GenerateTokens(userID uuid.UUID, tenantID uuid.UUID, jwtSecret string) (string, error) {
+	claims := CustomClaims{
+		TenantID: tenantID.String(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID.String(),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "ccms-api",
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(jwtSecret))
 }
 
-func ValidateToken(tokenString string, jwtSecret string) (uuid.UUID, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+func ValidateToken(tokenString string, jwtSecret string) (uuid.UUID, uuid.UUID, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
 		return []byte(jwtSecret), nil
 	})
 
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, uuid.Nil, err
 	}
 
-	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
+	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
+		// Parse userID from Subject
 		userID, err := uuid.Parse(claims.Subject)
 		if err != nil {
-			return uuid.Nil, errors.New("invalid user ID in token")
+			return uuid.Nil, uuid.Nil, errors.New("invalid user ID in token")
 		}
-		return userID, nil
+
+		// Parse tenantID from custom claim
+		tenantID, err := uuid.Parse(claims.TenantID)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, errors.New("invalid tenant ID in token")
+		}
+
+		return userID, tenantID, nil
 	}
 
-	return uuid.Nil, errors.New("invalid token")
+	return uuid.Nil, uuid.Nil, errors.New("invalid token")
 }

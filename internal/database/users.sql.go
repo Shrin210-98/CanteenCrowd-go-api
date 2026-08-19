@@ -7,8 +7,10 @@ package database
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 const checkEmailExists = `-- name: CheckEmailExists :one
@@ -20,6 +22,36 @@ SELECT EXISTS(
 
 func (q *Queries) CheckEmailExists(ctx context.Context, email string) (bool, error) {
 	row := q.db.QueryRow(ctx, checkEmailExists, email)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const checkEmailExistsInTenant = `-- name: CheckEmailExistsInTenant :one
+SELECT EXISTS(
+    SELECT 1 FROM users 
+    WHERE email = $1 AND tenant_id = $2 AND deleted_at IS NULL
+)
+`
+
+type CheckEmailExistsInTenantParams struct {
+	Email    string    `json:"email"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) CheckEmailExistsInTenant(ctx context.Context, arg CheckEmailExistsInTenantParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkEmailExistsInTenant, arg.Email, arg.TenantID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const checkTenantSlugExists = `-- name: CheckTenantSlugExists :one
+SELECT EXISTS(SELECT 1 FROM tenants WHERE slug = $1)
+`
+
+func (q *Queries) CheckTenantSlugExists(ctx context.Context, slug string) (bool, error) {
+	row := q.db.QueryRow(ctx, checkTenantSlugExists, slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -39,6 +71,25 @@ func (q *Queries) CheckUsernameExists(ctx context.Context, username string) (boo
 	return exists, err
 }
 
+const checkUsernameExistsInTenant = `-- name: CheckUsernameExistsInTenant :one
+SELECT EXISTS(
+    SELECT 1 FROM users 
+    WHERE username = $1 AND tenant_id = $2 AND deleted_at IS NULL
+)
+`
+
+type CheckUsernameExistsInTenantParams struct {
+	Username string    `json:"username"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) CheckUsernameExistsInTenant(ctx context.Context, arg CheckUsernameExistsInTenantParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkUsernameExistsInTenant, arg.Username, arg.TenantID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const clearPasswordResetToken = `-- name: ClearPasswordResetToken :one
 UPDATE users 
 SET 
@@ -46,14 +97,15 @@ SET
     token_expiry = NULL,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
-func (q *Queries) ClearPasswordResetToken(ctx context.Context, id pgtype.UUID) (User, error) {
+func (q *Queries) ClearPasswordResetToken(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, clearPasswordResetToken, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -75,20 +127,213 @@ func (q *Queries) ClearPasswordResetToken(ctx context.Context, id pgtype.UUID) (
 	return i, err
 }
 
+const countActiveUsersByTenant = `-- name: CountActiveUsersByTenant :one
+SELECT COUNT(*) 
+FROM users 
+WHERE tenant_id = $1 
+  AND is_locked = FALSE 
+  AND deleted_at IS NULL
+`
+
+func (q *Queries) CountActiveUsersByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveUsersByTenant, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countProfilesByTenant = `-- name: CountProfilesByTenant :one
+SELECT COUNT(*) 
+FROM user_profiles 
+WHERE tenant_id = $1
+`
+
+func (q *Queries) CountProfilesByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countProfilesByTenant, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countRolesByTenant = `-- name: CountRolesByTenant :one
+SELECT COUNT(*) 
+FROM roles 
+WHERE tenant_id = $1
+`
+
+func (q *Queries) CountRolesByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countRolesByTenant, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTenants = `-- name: CountTenants :one
+SELECT COUNT(*) FROM tenants WHERE status = 'active'
+`
+
+func (q *Queries) CountTenants(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenants)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUsersByTenant = `-- name: CountUsersByTenant :one
+SELECT COUNT(*) 
+FROM users 
+WHERE tenant_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) CountUsersByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsersByTenant, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUsersByType = `-- name: CountUsersByType :one
+SELECT COUNT(*) 
+FROM users 
+WHERE user_type = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) CountUsersByType(ctx context.Context, userType string) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsersByType, userType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createRefreshToken = `-- name: CreateRefreshToken :one
+
+INSERT INTO refresh_tokens (user_id, tenant_id, token, expires_at) 
+VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, tenant_id, token, expires_at, created_at
+`
+
+type CreateRefreshTokenParams struct {
+	UserID    uuid.UUID `json:"userId"`
+	TenantID  uuid.UUID `json:"tenantId"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// ============ REFRESH TOKEN QUERIES ============
+func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, createRefreshToken,
+		arg.UserID,
+		arg.TenantID,
+		arg.Token,
+		arg.ExpiresAt,
+	)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Token,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createRole = `-- name: CreateRole :one
+
+INSERT INTO roles (tenant_id, name, description, permission_template, is_default) 
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, tenant_id, name, description, permission_template, is_default, created_at, updated_at
+`
+
+type CreateRoleParams struct {
+	TenantID           uuid.UUID       `json:"tenantId"`
+	Name               string          `json:"name"`
+	Description        *string         `json:"description"`
+	PermissionTemplate json.RawMessage `json:"permissionTemplate"`
+	IsDefault          bool            `json:"isDefault"`
+}
+
+// ============ ROLE QUERIES ============
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
+	row := q.db.QueryRow(ctx, createRole,
+		arg.TenantID,
+		arg.Name,
+		arg.Description,
+		arg.PermissionTemplate,
+		arg.IsDefault,
+	)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.PermissionTemplate,
+		&i.IsDefault,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createTenant = `-- name: CreateTenant :one
+
+INSERT INTO tenants (name, slug, plan, status, settings) 
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, slug, plan, status, settings, created_at, updated_at
+`
+
+type CreateTenantParams struct {
+	Name     string          `json:"name"`
+	Slug     string          `json:"slug"`
+	Plan     string          `json:"plan"`
+	Status   string          `json:"status"`
+	Settings json.RawMessage `json:"settings"`
+}
+
+// ============ TENANT QUERIES ============
+func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, createTenant,
+		arg.Name,
+		arg.Slug,
+		arg.Plan,
+		arg.Status,
+		arg.Settings,
+	)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Plan,
+		&i.Status,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (username, email, password_hash, user_type) VALUES ($1, $2, $3, $4)
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+
+INSERT INTO users (tenant_id, username, email, password_hash, user_type) 
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	Username     string `json:"username"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"passwordHash"`
-	UserType     string `json:"userType"`
+	TenantID     uuid.UUID `json:"tenantId"`
+	Username     string    `json:"username"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"passwordHash"`
+	UserType     string    `json:"userType"`
 }
 
+// ============ USER QUERIES ============
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser,
+		arg.TenantID,
 		arg.Username,
 		arg.Email,
 		arg.PasswordHash,
@@ -97,6 +342,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -118,8 +364,434 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const createUserProfile = `-- name: CreateUserProfile :one
+
+INSERT INTO user_profiles (user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions) 
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at
+`
+
+type CreateUserProfileParams struct {
+	UserID      uuid.UUID       `json:"userId"`
+	TenantID    uuid.UUID       `json:"tenantId"`
+	FullName    *string         `json:"fullName"`
+	Phone       *string         `json:"phone"`
+	AvatarUrl   *string         `json:"avatarUrl"`
+	Timezone    *string         `json:"timezone"`
+	Permissions json.RawMessage `json:"permissions"`
+}
+
+// ============ USER PROFILE QUERIES ============
+func (q *Queries) CreateUserProfile(ctx context.Context, arg CreateUserProfileParams) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, createUserProfile,
+		arg.UserID,
+		arg.TenantID,
+		arg.FullName,
+		arg.Phone,
+		arg.AvatarUrl,
+		arg.Timezone,
+		arg.Permissions,
+	)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.FullName,
+		&i.Phone,
+		&i.AvatarUrl,
+		&i.Timezone,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createUserToken = `-- name: CreateUserToken :one
+
+INSERT INTO user_tokens (user_id, tenant_id, token, type, expires_at) 
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, tenant_id, token, type, expires_at, created_at, used_at
+`
+
+type CreateUserTokenParams struct {
+	UserID    uuid.UUID `json:"userId"`
+	TenantID  uuid.UUID `json:"tenantId"`
+	Token     string    `json:"token"`
+	Type      string    `json:"type"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// ============ USER TOKEN QUERIES ============
+func (q *Queries) CreateUserToken(ctx context.Context, arg CreateUserTokenParams) (UserToken, error) {
+	row := q.db.QueryRow(ctx, createUserToken,
+		arg.UserID,
+		arg.TenantID,
+		arg.Token,
+		arg.Type,
+		arg.ExpiresAt,
+	)
+	var i UserToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Token,
+		&i.Type,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
+const deleteExpiredRefreshTokens = `-- name: DeleteExpiredRefreshTokens :exec
+DELETE FROM refresh_tokens 
+WHERE expires_at < NOW()
+`
+
+func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredRefreshTokens)
+	return err
+}
+
+const deleteExpiredTokens = `-- name: DeleteExpiredTokens :exec
+DELETE FROM user_tokens 
+WHERE expires_at < NOW()
+`
+
+func (q *Queries) DeleteExpiredTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredTokens)
+	return err
+}
+
+const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
+DELETE FROM refresh_tokens 
+WHERE token = $1
+`
+
+func (q *Queries) DeleteRefreshToken(ctx context.Context, token string) error {
+	_, err := q.db.Exec(ctx, deleteRefreshToken, token)
+	return err
+}
+
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles 
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteRoleParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) DeleteRole(ctx context.Context, arg DeleteRoleParams) error {
+	_, err := q.db.Exec(ctx, deleteRole, arg.ID, arg.TenantID)
+	return err
+}
+
+const deleteTenantRefreshTokens = `-- name: DeleteTenantRefreshTokens :exec
+DELETE FROM refresh_tokens 
+WHERE tenant_id = $1
+`
+
+func (q *Queries) DeleteTenantRefreshTokens(ctx context.Context, tenantID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTenantRefreshTokens, tenantID)
+	return err
+}
+
+const deleteUserProfile = `-- name: DeleteUserProfile :exec
+DELETE FROM user_profiles 
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserProfile(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserProfile, userID)
+	return err
+}
+
+const deleteUserRefreshTokens = `-- name: DeleteUserRefreshTokens :exec
+DELETE FROM refresh_tokens 
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserRefreshTokens(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserRefreshTokens, userID)
+	return err
+}
+
+const deleteUserTokens = `-- name: DeleteUserTokens :exec
+DELETE FROM user_tokens 
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserTokens(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserTokens, userID)
+	return err
+}
+
+const deleteUserTokensByType = `-- name: DeleteUserTokensByType :exec
+DELETE FROM user_tokens 
+WHERE user_id = $1 AND type = $2
+`
+
+type DeleteUserTokensByTypeParams struct {
+	UserID uuid.UUID `json:"userId"`
+	Type   string    `json:"type"`
+}
+
+func (q *Queries) DeleteUserTokensByType(ctx context.Context, arg DeleteUserTokensByTypeParams) error {
+	_, err := q.db.Exec(ctx, deleteUserTokensByType, arg.UserID, arg.Type)
+	return err
+}
+
+const getRefreshToken = `-- name: GetRefreshToken :one
+SELECT id, user_id, tenant_id, token, expires_at, created_at FROM refresh_tokens 
+WHERE token = $1 AND expires_at > NOW()
+`
+
+func (q *Queries) GetRefreshToken(ctx context.Context, token string) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, getRefreshToken, token)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Token,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoleByID = `-- name: GetRoleByID :one
+SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+WHERE id = $1
+`
+
+func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error) {
+	row := q.db.QueryRow(ctx, getRoleByID, id)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.PermissionTemplate,
+		&i.IsDefault,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRoleByTenantAndName = `-- name: GetRoleByTenantAndName :one
+SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+WHERE tenant_id = $1 AND name = $2
+`
+
+type GetRoleByTenantAndNameParams struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	Name     string    `json:"name"`
+}
+
+func (q *Queries) GetRoleByTenantAndName(ctx context.Context, arg GetRoleByTenantAndNameParams) (Role, error) {
+	row := q.db.QueryRow(ctx, getRoleByTenantAndName, arg.TenantID, arg.Name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.PermissionTemplate,
+		&i.IsDefault,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStaffUsersByTenant = `-- name: GetStaffUsersByTenant :many
+SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at 
+FROM users u
+WHERE u.tenant_id = $1 
+  AND u.user_type IN ('staff', 'guest')
+  AND u.deleted_at IS NULL
+ORDER BY u.created_at DESC
+`
+
+func (q *Queries) GetStaffUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]User, error) {
+	rows, err := q.db.Query(ctx, getStaffUsersByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTenantByID = `-- name: GetTenantByID :one
+SELECT id, name, slug, plan, status, settings, created_at, updated_at FROM tenants WHERE id = $1
+`
+
+func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error) {
+	row := q.db.QueryRow(ctx, getTenantByID, id)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Plan,
+		&i.Status,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTenantBySlug = `-- name: GetTenantBySlug :one
+SELECT id, name, slug, plan, status, settings, created_at, updated_at FROM tenants WHERE slug = $1
+`
+
+func (q *Queries) GetTenantBySlug(ctx context.Context, slug string) (Tenant, error) {
+	row := q.db.QueryRow(ctx, getTenantBySlug, slug)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Plan,
+		&i.Status,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTenantStats = `-- name: GetTenantStats :one
+SELECT 
+    t.id, t.name, t.slug, t.plan, t.status, t.settings, t.created_at, t.updated_at,
+    (SELECT COUNT(*) FROM users u WHERE u.tenant_id = t.id AND u.deleted_at IS NULL) as user_count,
+    (SELECT COUNT(*) FROM roles r WHERE r.tenant_id = t.id) as role_count,
+    (SELECT COUNT(*) FROM user_profiles up WHERE up.tenant_id = t.id) as profile_count
+FROM tenants t
+WHERE t.id = $1
+`
+
+type GetTenantStatsRow struct {
+	ID           uuid.UUID       `json:"id"`
+	Name         string          `json:"name"`
+	Slug         string          `json:"slug"`
+	Plan         string          `json:"plan"`
+	Status       string          `json:"status"`
+	Settings     json.RawMessage `json:"settings"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
+	UserCount    int64           `json:"userCount"`
+	RoleCount    int64           `json:"roleCount"`
+	ProfileCount int64           `json:"profileCount"`
+}
+
+func (q *Queries) GetTenantStats(ctx context.Context, id uuid.UUID) (GetTenantStatsRow, error) {
+	row := q.db.QueryRow(ctx, getTenantStats, id)
+	var i GetTenantStatsRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Plan,
+		&i.Status,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserCount,
+		&i.RoleCount,
+		&i.ProfileCount,
+	)
+	return i, err
+}
+
+const getTenantWithStats = `-- name: GetTenantWithStats :one
+SELECT 
+    t.id, t.name, t.slug, t.plan, t.status, t.settings, t.created_at, t.updated_at,
+    COUNT(DISTINCT u.id) as total_users,
+    COUNT(DISTINCT CASE WHEN u.deleted_at IS NULL THEN u.id END) as active_users,
+    COUNT(DISTINCT r.id) as total_roles
+FROM tenants t
+LEFT JOIN users u ON u.tenant_id = t.id
+LEFT JOIN roles r ON r.tenant_id = t.id
+WHERE t.id = $1
+GROUP BY t.id
+`
+
+type GetTenantWithStatsRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Slug        string          `json:"slug"`
+	Plan        string          `json:"plan"`
+	Status      string          `json:"status"`
+	Settings    json.RawMessage `json:"settings"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
+	TotalUsers  int64           `json:"totalUsers"`
+	ActiveUsers int64           `json:"activeUsers"`
+	TotalRoles  int64           `json:"totalRoles"`
+}
+
+func (q *Queries) GetTenantWithStats(ctx context.Context, id uuid.UUID) (GetTenantWithStatsRow, error) {
+	row := q.db.QueryRow(ctx, getTenantWithStats, id)
+	var i GetTenantWithStatsRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Plan,
+		&i.Status,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TotalUsers,
+		&i.ActiveUsers,
+		&i.TotalRoles,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
 WHERE email = $1 AND deleted_at IS NULL
 `
 
@@ -128,6 +800,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -150,15 +823,16 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -181,15 +855,53 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 }
 
 const getUserByResetToken = `-- name: GetUserByResetToken :one
-SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
 WHERE password_reset_token = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) GetUserByResetToken(ctx context.Context, passwordResetToken pgtype.Text) (User, error) {
+func (q *Queries) GetUserByResetToken(ctx context.Context, passwordResetToken *string) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByResetToken, passwordResetToken)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByTenantAndID = `-- name: GetUserByTenantAndID :one
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type GetUserByTenantAndIDParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) GetUserByTenantAndID(ctx context.Context, arg GetUserByTenantAndIDParams) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByTenantAndID, arg.ID, arg.TenantID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -212,7 +924,7 @@ func (q *Queries) GetUserByResetToken(ctx context.Context, passwordResetToken pg
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
 WHERE username = $1 AND deleted_at IS NULL
 `
 
@@ -221,6 +933,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -242,8 +955,506 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	return i, err
 }
 
+const getUserProfile = `-- name: GetUserProfile :one
+SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at FROM user_profiles 
+WHERE user_id = $1
+`
+
+func (q *Queries) GetUserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, getUserProfile, userID)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.FullName,
+		&i.Phone,
+		&i.AvatarUrl,
+		&i.Timezone,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserProfileByTenant = `-- name: GetUserProfileByTenant :one
+SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at FROM user_profiles 
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type GetUserProfileByTenantParams struct {
+	UserID   uuid.UUID `json:"userId"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) GetUserProfileByTenant(ctx context.Context, arg GetUserProfileByTenantParams) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, getUserProfileByTenant, arg.UserID, arg.TenantID)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.FullName,
+		&i.Phone,
+		&i.AvatarUrl,
+		&i.Timezone,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserToken = `-- name: GetUserToken :one
+SELECT id, user_id, tenant_id, token, type, expires_at, created_at, used_at FROM user_tokens 
+WHERE token = $1 AND used_at IS NULL AND expires_at > NOW()
+`
+
+func (q *Queries) GetUserToken(ctx context.Context, token string) (UserToken, error) {
+	row := q.db.QueryRow(ctx, getUserToken, token)
+	var i UserToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Token,
+		&i.Type,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
+const getUserTokenByType = `-- name: GetUserTokenByType :one
+SELECT id, user_id, tenant_id, token, type, expires_at, created_at, used_at FROM user_tokens 
+WHERE user_id = $1 AND type = $2 AND used_at IS NULL AND expires_at > NOW()
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetUserTokenByTypeParams struct {
+	UserID uuid.UUID `json:"userId"`
+	Type   string    `json:"type"`
+}
+
+func (q *Queries) GetUserTokenByType(ctx context.Context, arg GetUserTokenByTypeParams) (UserToken, error) {
+	row := q.db.QueryRow(ctx, getUserTokenByType, arg.UserID, arg.Type)
+	var i UserToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Token,
+		&i.Type,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
+const getUserWithProfile = `-- name: GetUserWithProfile :one
+
+SELECT 
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    p.full_name,
+    p.phone,
+    p.avatar_url,
+    p.timezone,
+    p.permissions
+FROM users u
+LEFT JOIN user_profiles p ON u.id = p.user_id
+WHERE u.id = $1 AND u.deleted_at IS NULL
+`
+
+type GetUserWithProfileRow struct {
+	ID                 uuid.UUID        `json:"id"`
+	TenantID           uuid.UUID        `json:"tenantId"`
+	Username           string           `json:"username"`
+	Email              string           `json:"email"`
+	PasswordHash       string           `json:"passwordHash"`
+	LastLogin          *time.Time       `json:"lastLogin"`
+	LoginAttempts      int32            `json:"loginAttempts"`
+	IsLocked           bool             `json:"isLocked"`
+	LockedUntil        *time.Time       `json:"lockedUntil"`
+	PasswordResetToken *string          `json:"passwordResetToken"`
+	TokenExpiry        *time.Time       `json:"tokenExpiry"`
+	MustChangePassword bool             `json:"mustChangePassword"`
+	EmailVerified      bool             `json:"emailVerified"`
+	MfaEnabled         bool             `json:"mfaEnabled"`
+	LastPasswordChange *time.Time       `json:"lastPasswordChange"`
+	UserType           string           `json:"userType"`
+	DeletedAt          *time.Time       `json:"deletedAt"`
+	CreatedAt          time.Time        `json:"createdAt"`
+	UpdatedAt          time.Time        `json:"updatedAt"`
+	FullName           *string          `json:"fullName"`
+	Phone              *string          `json:"phone"`
+	AvatarUrl          *string          `json:"avatarUrl"`
+	Timezone           *string          `json:"timezone"`
+	Permissions        *json.RawMessage `json:"permissions"`
+}
+
+// ============ JOIN QUERIES ============
+func (q *Queries) GetUserWithProfile(ctx context.Context, id uuid.UUID) (GetUserWithProfileRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithProfile, id)
+	var i GetUserWithProfileRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FullName,
+		&i.Phone,
+		&i.AvatarUrl,
+		&i.Timezone,
+		&i.Permissions,
+	)
+	return i, err
+}
+
+const getUserWithTenant = `-- name: GetUserWithTenant :one
+SELECT 
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    t.name as tenant_name,
+    t.slug as tenant_slug,
+    t.plan as tenant_plan,
+    t.status as tenant_status
+FROM users u
+JOIN tenants t ON u.tenant_id = t.id
+WHERE u.id = $1 AND u.deleted_at IS NULL
+`
+
+type GetUserWithTenantRow struct {
+	ID                 uuid.UUID  `json:"id"`
+	TenantID           uuid.UUID  `json:"tenantId"`
+	Username           string     `json:"username"`
+	Email              string     `json:"email"`
+	PasswordHash       string     `json:"passwordHash"`
+	LastLogin          *time.Time `json:"lastLogin"`
+	LoginAttempts      int32      `json:"loginAttempts"`
+	IsLocked           bool       `json:"isLocked"`
+	LockedUntil        *time.Time `json:"lockedUntil"`
+	PasswordResetToken *string    `json:"passwordResetToken"`
+	TokenExpiry        *time.Time `json:"tokenExpiry"`
+	MustChangePassword bool       `json:"mustChangePassword"`
+	EmailVerified      bool       `json:"emailVerified"`
+	MfaEnabled         bool       `json:"mfaEnabled"`
+	LastPasswordChange *time.Time `json:"lastPasswordChange"`
+	UserType           string     `json:"userType"`
+	DeletedAt          *time.Time `json:"deletedAt"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+	TenantName         string     `json:"tenantName"`
+	TenantSlug         string     `json:"tenantSlug"`
+	TenantPlan         string     `json:"tenantPlan"`
+	TenantStatus       string     `json:"tenantStatus"`
+}
+
+func (q *Queries) GetUserWithTenant(ctx context.Context, id uuid.UUID) (GetUserWithTenantRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithTenant, id)
+	var i GetUserWithTenantRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TenantName,
+		&i.TenantSlug,
+		&i.TenantPlan,
+		&i.TenantStatus,
+	)
+	return i, err
+}
+
+const getUsersByTenantID = `-- name: GetUsersByTenantID :many
+SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at 
+FROM users u
+WHERE u.tenant_id = $1 AND u.deleted_at IS NULL
+ORDER BY u.created_at DESC
+`
+
+func (q *Queries) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]User, error) {
+	rows, err := q.db.Query(ctx, getUsersByTenantID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllTenants = `-- name: ListAllTenants :many
+SELECT id, name, slug, plan, status, settings, created_at, updated_at FROM tenants ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllTenants(ctx context.Context) ([]Tenant, error) {
+	rows, err := q.db.Query(ctx, listAllTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Tenant{}
+	for rows.Next() {
+		var i Tenant
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Plan,
+			&i.Status,
+			&i.Settings,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDefaultRolesByTenant = `-- name: ListDefaultRolesByTenant :many
+SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+WHERE tenant_id = $1 AND is_default = TRUE
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListDefaultRolesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Role, error) {
+	rows, err := q.db.Query(ctx, listDefaultRolesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Description,
+			&i.PermissionTemplate,
+			&i.IsDefault,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRolesByTenant = `-- name: ListRolesByTenant :many
+SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+WHERE tenant_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListRolesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Role, error) {
+	rows, err := q.db.Query(ctx, listRolesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Description,
+			&i.PermissionTemplate,
+			&i.IsDefault,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenants = `-- name: ListTenants :many
+SELECT id, name, slug, plan, status, settings, created_at, updated_at FROM tenants WHERE status = 'active' 
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTenants(ctx context.Context) ([]Tenant, error) {
+	rows, err := q.db.Query(ctx, listTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Tenant{}
+	for rows.Next() {
+		var i Tenant
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Plan,
+			&i.Status,
+			&i.Settings,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantsByPlan = `-- name: ListTenantsByPlan :many
+SELECT id, name, slug, plan, status, settings, created_at, updated_at FROM tenants WHERE plan = $1 AND status = 'active'
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListTenantsByPlan(ctx context.Context, plan string) ([]Tenant, error) {
+	rows, err := q.db.Query(ctx, listTenantsByPlan, plan)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Tenant{}
+	for rows.Next() {
+		var i Tenant
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Plan,
+			&i.Status,
+			&i.Settings,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserProfilesByTenant = `-- name: ListUserProfilesByTenant :many
+SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at FROM user_profiles 
+WHERE tenant_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListUserProfilesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserProfile, error) {
+	rows, err := q.db.Query(ctx, listUserProfilesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserProfile{}
+	for rows.Next() {
+		var i UserProfile
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TenantID,
+			&i.FullName,
+			&i.Phone,
+			&i.AvatarUrl,
+			&i.Timezone,
+			&i.Permissions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
 WHERE deleted_at IS NULL 
 ORDER BY created_at DESC
 `
@@ -254,11 +1465,109 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	items := []User{}
 	for rows.Next() {
 		var i User
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsersByTenant = `-- name: ListUsersByTenant :many
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE tenant_id = $1 AND deleted_at IS NULL 
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsersByTenantAndType = `-- name: ListUsersByTenantAndType :many
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+WHERE tenant_id = $1 AND user_type = $2 AND deleted_at IS NULL 
+ORDER BY created_at DESC
+`
+
+type ListUsersByTenantAndTypeParams struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	UserType string    `json:"userType"`
+}
+
+func (q *Queries) ListUsersByTenantAndType(ctx context.Context, arg ListUsersByTenantAndTypeParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsersByTenantAndType, arg.TenantID, arg.UserType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
 			&i.Username,
 			&i.Email,
 			&i.PasswordHash,
@@ -288,7 +1597,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 }
 
 const listUsersByType = `-- name: ListUsersByType :many
-SELECT id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
 WHERE user_type = $1 AND deleted_at IS NULL 
 ORDER BY created_at DESC
 `
@@ -299,11 +1608,12 @@ func (q *Queries) ListUsersByType(ctx context.Context, userType string) ([]User,
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	items := []User{}
 	for rows.Next() {
 		var i User
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Username,
 			&i.Email,
 			&i.PasswordHash,
@@ -332,6 +1642,100 @@ func (q *Queries) ListUsersByType(ctx context.Context, userType string) ([]User,
 	return items, nil
 }
 
+const listUsersWithProfilesByTenant = `-- name: ListUsersWithProfilesByTenant :many
+SELECT 
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    p.full_name,
+    p.phone,
+    p.avatar_url,
+    p.timezone
+FROM users u
+LEFT JOIN user_profiles p ON u.id = p.user_id
+WHERE u.tenant_id = $1 AND u.deleted_at IS NULL
+ORDER BY u.created_at DESC
+`
+
+type ListUsersWithProfilesByTenantRow struct {
+	ID                 uuid.UUID  `json:"id"`
+	TenantID           uuid.UUID  `json:"tenantId"`
+	Username           string     `json:"username"`
+	Email              string     `json:"email"`
+	PasswordHash       string     `json:"passwordHash"`
+	LastLogin          *time.Time `json:"lastLogin"`
+	LoginAttempts      int32      `json:"loginAttempts"`
+	IsLocked           bool       `json:"isLocked"`
+	LockedUntil        *time.Time `json:"lockedUntil"`
+	PasswordResetToken *string    `json:"passwordResetToken"`
+	TokenExpiry        *time.Time `json:"tokenExpiry"`
+	MustChangePassword bool       `json:"mustChangePassword"`
+	EmailVerified      bool       `json:"emailVerified"`
+	MfaEnabled         bool       `json:"mfaEnabled"`
+	LastPasswordChange *time.Time `json:"lastPasswordChange"`
+	UserType           string     `json:"userType"`
+	DeletedAt          *time.Time `json:"deletedAt"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+	FullName           *string    `json:"fullName"`
+	Phone              *string    `json:"phone"`
+	AvatarUrl          *string    `json:"avatarUrl"`
+	Timezone           *string    `json:"timezone"`
+}
+
+func (q *Queries) ListUsersWithProfilesByTenant(ctx context.Context, tenantID uuid.UUID) ([]ListUsersWithProfilesByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listUsersWithProfilesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersWithProfilesByTenantRow{}
+	for rows.Next() {
+		var i ListUsersWithProfilesByTenantRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FullName,
+			&i.Phone,
+			&i.AvatarUrl,
+			&i.Timezone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markTokenUsed = `-- name: MarkTokenUsed :exec
+UPDATE user_tokens 
+SET used_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) MarkTokenUsed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markTokenUsed, id)
+	return err
+}
+
 const setPasswordResetToken = `-- name: SetPasswordResetToken :one
 UPDATE users 
 SET 
@@ -339,13 +1743,13 @@ SET
     token_expiry = $3,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
 type SetPasswordResetTokenParams struct {
-	ID                 pgtype.UUID        `json:"id"`
-	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
-	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
+	ID                 uuid.UUID  `json:"id"`
+	PasswordResetToken *string    `json:"passwordResetToken"`
+	TokenExpiry        *time.Time `json:"tokenExpiry"`
 }
 
 func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) (User, error) {
@@ -353,6 +1757,7 @@ func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordRese
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -374,16 +1779,33 @@ func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordRese
 	return i, err
 }
 
+const softDeleteTenant = `-- name: SoftDeleteTenant :exec
+UPDATE tenants SET 
+    status = 'inactive',
+    updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) SoftDeleteTenant(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteTenant, id)
+	return err
+}
+
 const softDeleteUser = `-- name: SoftDeleteUser :exec
 UPDATE users 
 SET 
     deleted_at = NOW(),
     updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND tenant_id = $2
 `
 
-func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, softDeleteUser, id)
+type SoftDeleteUserParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) error {
+	_, err := q.db.Exec(ctx, softDeleteUser, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -395,14 +1817,14 @@ SET
     locked_until = $4,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
 type UpdateLoginAttemptsParams struct {
-	ID            pgtype.UUID        `json:"id"`
-	LoginAttempts pgtype.Int4        `json:"loginAttempts"`
-	IsLocked      pgtype.Bool        `json:"isLocked"`
-	LockedUntil   pgtype.Timestamptz `json:"lockedUntil"`
+	ID            uuid.UUID  `json:"id"`
+	LoginAttempts int32      `json:"loginAttempts"`
+	IsLocked      bool       `json:"isLocked"`
+	LockedUntil   *time.Time `json:"lockedUntil"`
 }
 
 func (q *Queries) UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemptsParams) (User, error) {
@@ -415,6 +1837,7 @@ func (q *Queries) UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemp
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -444,13 +1867,13 @@ SET
     must_change_password = $3,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
 type UpdatePasswordParams struct {
-	ID                 pgtype.UUID `json:"id"`
-	PasswordHash       string      `json:"passwordHash"`
-	MustChangePassword pgtype.Bool `json:"mustChangePassword"`
+	ID                 uuid.UUID `json:"id"`
+	PasswordHash       string    `json:"passwordHash"`
+	MustChangePassword bool      `json:"mustChangePassword"`
 }
 
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) (User, error) {
@@ -458,6 +1881,7 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -473,6 +1897,95 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 		&i.LastPasswordChange,
 		&i.UserType,
 		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateRole = `-- name: UpdateRole :one
+UPDATE roles 
+SET 
+    name = $2,
+    description = $3,
+    permission_template = $4,
+    is_default = $5,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $6
+RETURNING id, tenant_id, name, description, permission_template, is_default, created_at, updated_at
+`
+
+type UpdateRoleParams struct {
+	ID                 uuid.UUID       `json:"id"`
+	Name               string          `json:"name"`
+	Description        *string         `json:"description"`
+	PermissionTemplate json.RawMessage `json:"permissionTemplate"`
+	IsDefault          bool            `json:"isDefault"`
+	TenantID           uuid.UUID       `json:"tenantId"`
+}
+
+func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, error) {
+	row := q.db.QueryRow(ctx, updateRole,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.PermissionTemplate,
+		arg.IsDefault,
+		arg.TenantID,
+	)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.PermissionTemplate,
+		&i.IsDefault,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateTenant = `-- name: UpdateTenant :one
+UPDATE tenants 
+SET 
+    name = $2,
+    slug = $3,
+    plan = $4,
+    status = $5,
+    settings = $6,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, slug, plan, status, settings, created_at, updated_at
+`
+
+type UpdateTenantParams struct {
+	ID       uuid.UUID       `json:"id"`
+	Name     string          `json:"name"`
+	Slug     string          `json:"slug"`
+	Plan     string          `json:"plan"`
+	Status   string          `json:"status"`
+	Settings json.RawMessage `json:"settings"`
+}
+
+func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, updateTenant,
+		arg.ID,
+		arg.Name,
+		arg.Slug,
+		arg.Plan,
+		arg.Status,
+		arg.Settings,
+	)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Plan,
+		&i.Status,
+		&i.Settings,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -495,26 +2008,28 @@ SET
     mfa_enabled = $12,
     last_password_change = $13,
     user_type = $14,
+    tenant_id = $15,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
 type UpdateUserParams struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Username           string             `json:"username"`
-	Email              string             `json:"email"`
-	LastLogin          pgtype.Timestamptz `json:"lastLogin"`
-	LoginAttempts      pgtype.Int4        `json:"loginAttempts"`
-	IsLocked           pgtype.Bool        `json:"isLocked"`
-	LockedUntil        pgtype.Timestamptz `json:"lockedUntil"`
-	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
-	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
-	MustChangePassword pgtype.Bool        `json:"mustChangePassword"`
-	EmailVerified      pgtype.Bool        `json:"emailVerified"`
-	MfaEnabled         pgtype.Bool        `json:"mfaEnabled"`
-	LastPasswordChange pgtype.Timestamptz `json:"lastPasswordChange"`
-	UserType           string             `json:"userType"`
+	ID                 uuid.UUID  `json:"id"`
+	Username           string     `json:"username"`
+	Email              string     `json:"email"`
+	LastLogin          *time.Time `json:"lastLogin"`
+	LoginAttempts      int32      `json:"loginAttempts"`
+	IsLocked           bool       `json:"isLocked"`
+	LockedUntil        *time.Time `json:"lockedUntil"`
+	PasswordResetToken *string    `json:"passwordResetToken"`
+	TokenExpiry        *time.Time `json:"tokenExpiry"`
+	MustChangePassword bool       `json:"mustChangePassword"`
+	EmailVerified      bool       `json:"emailVerified"`
+	MfaEnabled         bool       `json:"mfaEnabled"`
+	LastPasswordChange *time.Time `json:"lastPasswordChange"`
+	UserType           string     `json:"userType"`
+	TenantID           uuid.UUID  `json:"tenantId"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
@@ -533,10 +2048,12 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.MfaEnabled,
 		arg.LastPasswordChange,
 		arg.UserType,
+		arg.TenantID,
 	)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -558,20 +2075,117 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 	return i, err
 }
 
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE user_profiles 
+SET 
+    full_name = $2,
+    phone = $3,
+    avatar_url = $4,
+    timezone = $5,
+    permissions = $6,
+    updated_at = NOW()
+WHERE user_id = $1
+RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at
+`
+
+type UpdateUserProfileParams struct {
+	UserID      uuid.UUID       `json:"userId"`
+	FullName    *string         `json:"fullName"`
+	Phone       *string         `json:"phone"`
+	AvatarUrl   *string         `json:"avatarUrl"`
+	Timezone    *string         `json:"timezone"`
+	Permissions json.RawMessage `json:"permissions"`
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.UserID,
+		arg.FullName,
+		arg.Phone,
+		arg.AvatarUrl,
+		arg.Timezone,
+		arg.Permissions,
+	)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.FullName,
+		&i.Phone,
+		&i.AvatarUrl,
+		&i.Timezone,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserProfileByTenant = `-- name: UpdateUserProfileByTenant :one
+UPDATE user_profiles 
+SET 
+    full_name = $2,
+    phone = $3,
+    avatar_url = $4,
+    timezone = $5,
+    permissions = $6,
+    updated_at = NOW()
+WHERE user_id = $1 AND tenant_id = $7
+RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at
+`
+
+type UpdateUserProfileByTenantParams struct {
+	UserID      uuid.UUID       `json:"userId"`
+	FullName    *string         `json:"fullName"`
+	Phone       *string         `json:"phone"`
+	AvatarUrl   *string         `json:"avatarUrl"`
+	Timezone    *string         `json:"timezone"`
+	Permissions json.RawMessage `json:"permissions"`
+	TenantID    uuid.UUID       `json:"tenantId"`
+}
+
+func (q *Queries) UpdateUserProfileByTenant(ctx context.Context, arg UpdateUserProfileByTenantParams) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, updateUserProfileByTenant,
+		arg.UserID,
+		arg.FullName,
+		arg.Phone,
+		arg.AvatarUrl,
+		arg.Timezone,
+		arg.Permissions,
+		arg.TenantID,
+	)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.FullName,
+		&i.Phone,
+		&i.AvatarUrl,
+		&i.Timezone,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const verifyEmail = `-- name: VerifyEmail :one
 UPDATE users 
 SET 
     email_verified = TRUE,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
 `
 
-func (q *Queries) VerifyEmail(ctx context.Context, id pgtype.UUID) (User, error) {
+func (q *Queries) VerifyEmail(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, verifyEmail, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,

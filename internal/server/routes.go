@@ -29,32 +29,32 @@ func registerRoutesV1(mux *http.ServeMux, handler *handlers.Handler) {
 	// mux.HandleFunc("DELETE /users/{id}", handler.DeleteUser)
 	mux.HandleFunc("GET    /user-profile", handler.GetUserProfile)
 
-	mux.HandleFunc("GET    /employees", handler.ListEmployees)
+	mux.HandleFunc("GET    /employees", handler.Employees.ListEmployees)
 	// mux.HandleFunc("GET    /employees", handler.SearchEmployees)
-	mux.HandleFunc("GET    /employees/{id}", handler.GetEmployeeById)
-	mux.HandleFunc("POST   /employees", handler.CreateEmployee)
-	mux.HandleFunc("PUT    /employees", handler.UpdateEmployee)
-	mux.HandleFunc("DELETE /employees/{id}", handler.DeleteEmployee)
+	mux.HandleFunc("GET    /employees/{id}", handler.Employees.GetEmployeeById)
+	mux.HandleFunc("POST   /employees", handler.Employees.CreateEmployee)
+	mux.HandleFunc("PUT    /employees", handler.Employees.UpdateEmployee)
+	mux.HandleFunc("DELETE /employees/{id}", handler.Employees.DeleteEmployee)
 
-	mux.HandleFunc("GET    /departments", handler.ListDepartments)
-	mux.HandleFunc("POST   /departments", handler.CreateDepartment)
-	mux.HandleFunc("PUT    /departments", handler.UpdateDepartment)
-	mux.HandleFunc("DELETE /departments/{id}", handler.DeleteDepartment)
+	mux.HandleFunc("GET    /employees/departments", handler.Employees.ListDepartments)
+	mux.HandleFunc("POST   /employees/departments", handler.Employees.CreateDepartment)
+	mux.HandleFunc("PUT    /employees/departments", handler.Employees.UpdateDepartment)
+	mux.HandleFunc("DELETE /employees/departments/{id}", handler.Employees.DeleteDepartment)
 
-	mux.HandleFunc("GET    /positions", handler.ListPositions)
-	mux.HandleFunc("POST   /positions", handler.CreatePosition)
-	mux.HandleFunc("PUT    /positions", handler.UpdatePosition)
-	mux.HandleFunc("DELETE /positions/{id}", handler.DeletePosition)
+	mux.HandleFunc("GET    /employees/positions", handler.Employees.ListPositions)
+	mux.HandleFunc("POST   /employees/positions", handler.Employees.CreatePosition)
+	mux.HandleFunc("PUT    /employees/positions", handler.Employees.UpdatePosition)
+	mux.HandleFunc("DELETE /employees/positions/{id}", handler.Employees.DeletePosition)
 
 }
 
 func OldRegisterRoutes(handler *handlers.Handler) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET    /departments", handler.ListDepartments)
-	mux.HandleFunc("POST   /departments", handler.CreateDepartment)
-	mux.HandleFunc("PUT    /departments", handler.UpdateDepartment)
-	mux.HandleFunc("DELETE /departments/{id}", handler.DeleteDepartment)
+	// mux.HandleFunc("GET    /departments", handler.ListDepartments)
+	// mux.HandleFunc("POST   /departments", handler.CreateDepartment)
+	// mux.HandleFunc("PUT    /departments", handler.UpdateDepartment)
+	// mux.HandleFunc("DELETE /departments/{id}", handler.DeleteDepartment)
 
 	return mux
 }

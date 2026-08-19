@@ -5,44 +5,52 @@
 package database
 
 import (
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Department struct {
-	ID          pgtype.UUID `json:"id"`
-	OwnerID     pgtype.UUID `json:"ownerId"`
-	Name        string      `json:"name"`
-	Description pgtype.Text `json:"description"`
+	ID          uuid.UUID  `json:"id"`
+	TenantID    uuid.UUID  `json:"tenantId"`
+	Name        string     `json:"name"`
+	Description *string    `json:"description"`
+	ManagerID   *uuid.UUID `json:"managerId"`
+	IsActive    bool       `json:"isActive"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 type Employee struct {
-	ID                    pgtype.UUID      `json:"id"`
-	UserID                pgtype.UUID      `json:"userId"`
-	OwnerID               pgtype.UUID      `json:"ownerId"`
-	FirstName             string           `json:"firstName"`
-	LastName              string           `json:"lastName"`
-	Email                 string           `json:"email"`
-	Phone                 pgtype.Text      `json:"phone"`
-	Address               pgtype.Text      `json:"address"`
-	HireDate              pgtype.Date      `json:"hireDate"`
-	TerminationDate       pgtype.Date      `json:"terminationDate"`
-	PositionID            pgtype.UUID      `json:"positionId"`
-	DepartmentID          pgtype.UUID      `json:"departmentId"`
-	Salary                pgtype.Numeric   `json:"salary"`
-	EmergencyContactName  pgtype.Text      `json:"emergencyContactName"`
-	EmergencyContactPhone pgtype.Text      `json:"emergencyContactPhone"`
-	ProfileDescription    pgtype.Text      `json:"profileDescription"`
-	IsActive              pgtype.Bool      `json:"isActive"`
-	CreatedAt             pgtype.Timestamp `json:"createdAt"`
-	UpdatedAt             pgtype.Timestamp `json:"updatedAt"`
+	ID                    uuid.UUID      `json:"id"`
+	TenantID              uuid.UUID      `json:"tenantId"`
+	UserID                *uuid.UUID     `json:"userId"`
+	FirstName             string         `json:"firstName"`
+	LastName              string         `json:"lastName"`
+	Email                 string         `json:"email"`
+	Phone                 *string        `json:"phone"`
+	Address               *string        `json:"address"`
+	HireDate              time.Time      `json:"hireDate"`
+	TerminationDate       *time.Time     `json:"terminationDate"`
+	PositionID            uuid.UUID      `json:"positionId"`
+	DepartmentID          uuid.UUID      `json:"departmentId"`
+	Salary                pgtype.Numeric `json:"salary"`
+	EmergencyContactName  *string        `json:"emergencyContactName"`
+	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
+	ProfileDescription    *string        `json:"profileDescription"`
+	IsActive              bool           `json:"isActive"`
+	CreatedAt             time.Time      `json:"createdAt"`
+	UpdatedAt             time.Time      `json:"updatedAt"`
 }
 
 type Menu struct {
 	ID          int32            `json:"id"`
 	Name        string           `json:"name"`
-	Description pgtype.Text      `json:"description"`
+	Description *string          `json:"description"`
 	IsActive    pgtype.Bool      `json:"isActive"`
-	Categories  []byte           `json:"categories"`
+	Categories  json.RawMessage  `json:"categories"`
 	ValidFrom   pgtype.Timestamp `json:"validFrom"`
 	ValidTo     pgtype.Timestamp `json:"validTo"`
 }
@@ -50,7 +58,7 @@ type Menu struct {
 type MenuItem struct {
 	ID              int32            `json:"id"`
 	Name            string           `json:"name"`
-	Description     pgtype.Text      `json:"description"`
+	Description     *string          `json:"description"`
 	Price           pgtype.Numeric   `json:"price"`
 	Cost            pgtype.Numeric   `json:"cost"`
 	PreparationTime pgtype.Int4      `json:"preparationTime"`
@@ -58,75 +66,96 @@ type MenuItem struct {
 	IsVegan         pgtype.Bool      `json:"isVegan"`
 	IsGlutenFree    pgtype.Bool      `json:"isGlutenFree"`
 	IsActive        pgtype.Bool      `json:"isActive"`
-	ImageUrl        pgtype.Text      `json:"imageUrl"`
+	ImageUrl        *string          `json:"imageUrl"`
 	CreatedAt       pgtype.Timestamp `json:"createdAt"`
 	UpdatedAt       pgtype.Timestamp `json:"updatedAt"`
 }
 
 type Position struct {
-	ID           pgtype.UUID `json:"id"`
-	OwnerID      pgtype.UUID `json:"ownerId"`
+	ID           uuid.UUID   `json:"id"`
+	TenantID     uuid.UUID   `json:"tenantId"`
 	Title        string      `json:"title"`
-	Description  pgtype.Text `json:"description"`
+	Description  *string     `json:"description"`
 	Level        pgtype.Int4 `json:"level"`
-	IsManagement pgtype.Bool `json:"isManagement"`
+	IsManagement bool        `json:"isManagement"`
+	IsActive     bool        `json:"isActive"`
+	CreatedAt    time.Time   `json:"createdAt"`
+	UpdatedAt    time.Time   `json:"updatedAt"`
 }
 
 type RefreshToken struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"userId"`
-	Token     string             `json:"token"`
-	ExpiresAt pgtype.Timestamptz `json:"expiresAt"`
-	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"userId"`
+	TenantID  uuid.UUID `json:"tenantId"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type Role struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Name               string             `json:"name"`
-	Description        pgtype.Text        `json:"description"`
-	PermissionTemplate []byte             `json:"permissionTemplate"`
-	IsDefault          pgtype.Bool        `json:"isDefault"`
-	CreatedAt          pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt          pgtype.Timestamptz `json:"updatedAt"`
+	ID                 uuid.UUID       `json:"id"`
+	TenantID           uuid.UUID       `json:"tenantId"`
+	Name               string          `json:"name"`
+	Description        *string         `json:"description"`
+	PermissionTemplate json.RawMessage `json:"permissionTemplate"`
+	IsDefault          bool            `json:"isDefault"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	UpdatedAt          time.Time       `json:"updatedAt"`
+}
+
+type Tenant struct {
+	ID        uuid.UUID       `json:"id"`
+	Name      string          `json:"name"`
+	Slug      string          `json:"slug"`
+	Plan      string          `json:"plan"`
+	Status    string          `json:"status"`
+	Settings  json.RawMessage `json:"settings"`
+	CreatedAt time.Time       `json:"createdAt"`
+	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
 type User struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Username           string             `json:"username"`
-	Email              string             `json:"email"`
-	PasswordHash       string             `json:"passwordHash"`
-	LastLogin          pgtype.Timestamptz `json:"lastLogin"`
-	LoginAttempts      pgtype.Int4        `json:"loginAttempts"`
-	IsLocked           pgtype.Bool        `json:"isLocked"`
-	LockedUntil        pgtype.Timestamptz `json:"lockedUntil"`
-	PasswordResetToken pgtype.Text        `json:"passwordResetToken"`
-	TokenExpiry        pgtype.Timestamptz `json:"tokenExpiry"`
-	MustChangePassword pgtype.Bool        `json:"mustChangePassword"`
-	EmailVerified      pgtype.Bool        `json:"emailVerified"`
-	MfaEnabled         pgtype.Bool        `json:"mfaEnabled"`
-	LastPasswordChange pgtype.Timestamptz `json:"lastPasswordChange"`
-	UserType           string             `json:"userType"`
-	DeletedAt          pgtype.Timestamptz `json:"deletedAt"`
-	CreatedAt          pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt          pgtype.Timestamptz `json:"updatedAt"`
+	ID                 uuid.UUID  `json:"id"`
+	TenantID           uuid.UUID  `json:"tenantId"`
+	Username           string     `json:"username"`
+	Email              string     `json:"email"`
+	PasswordHash       string     `json:"passwordHash"`
+	LastLogin          *time.Time `json:"lastLogin"`
+	LoginAttempts      int32      `json:"loginAttempts"`
+	IsLocked           bool       `json:"isLocked"`
+	LockedUntil        *time.Time `json:"lockedUntil"`
+	PasswordResetToken *string    `json:"passwordResetToken"`
+	TokenExpiry        *time.Time `json:"tokenExpiry"`
+	MustChangePassword bool       `json:"mustChangePassword"`
+	EmailVerified      bool       `json:"emailVerified"`
+	MfaEnabled         bool       `json:"mfaEnabled"`
+	LastPasswordChange *time.Time `json:"lastPasswordChange"`
+	UserType           string     `json:"userType"`
+	DeletedAt          *time.Time `json:"deletedAt"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 type UserProfile struct {
-	ID          pgtype.UUID `json:"id"`
-	UserID      pgtype.UUID `json:"userId"`
-	FullName    pgtype.Text `json:"fullName"`
-	Phone       pgtype.Text `json:"phone"`
-	AvatarUrl   pgtype.Text `json:"avatarUrl"`
-	Timezone    pgtype.Text `json:"timezone"`
-	Permissions []byte      `json:"permissions"`
+	ID          uuid.UUID       `json:"id"`
+	UserID      uuid.UUID       `json:"userId"`
+	TenantID    uuid.UUID       `json:"tenantId"`
+	FullName    *string         `json:"fullName"`
+	Phone       *string         `json:"phone"`
+	AvatarUrl   *string         `json:"avatarUrl"`
+	Timezone    *string         `json:"timezone"`
+	Permissions json.RawMessage `json:"permissions"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
 }
 
 type UserToken struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"userId"`
-	Token     string             `json:"token"`
-	Type      string             `json:"type"`
-	ExpiresAt pgtype.Timestamptz `json:"expiresAt"`
-	CreatedAt pgtype.Timestamptz `json:"createdAt"`
-	UsedAt    pgtype.Timestamptz `json:"usedAt"`
+	ID        uuid.UUID  `json:"id"`
+	UserID    uuid.UUID  `json:"userId"`
+	TenantID  uuid.UUID  `json:"tenantId"`
+	Token     string     `json:"token"`
+	Type      string     `json:"type"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UsedAt    *time.Time `json:"usedAt"`
 }

@@ -1,117 +1,89 @@
-# Simple Makefile for a Go project
+# Load .env file
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
-# Build the application
-all: build test
-
+# Build
 build:
-	@echo "Building..."
-	@go build -o main.exe cmd/api/main.go
+	@go build -o bin/api ./cmd/api
 
-# Run the application
+# Run locally
 run:
-	@go run cmd/api/main.go
+	@go run ./cmd/api
 
-# Create DB container
-docker-up:
-	@docker compose up --build
+# Local hot reload (DB in Docker, API on host)
+watch:
+	@docker compose up -d psql_bp
+	@air
 
-# Shutdown DB container
-docker-down:
+# Docker development (full stack with hot reload)
+dev:
+	@docker compose -f docker-compose.dev.yml up --build
+
+dev-detach:
+	@docker compose -f docker-compose.dev.yml up --build -d
+
+dev-api:
+	@docker compose -f docker-compose.dev.yml up -d --build api
+
+dev-down:
+	@docker compose -f docker-compose.dev.yml down
+
+dev-logs:
+	@docker compose -f docker-compose.dev.yml logs -f api
+
+# Docker production
+prod:
+	@docker compose up --build -d
+
+prod-down:
 	@docker compose down
 
-# Test the application
-test:
-	@echo "Testing..."
-	@go test ./... -v
-# Integrations Tests for the application
-itest:
-	@echo "Running integration tests..."
-	@go test ./internal/database -v
+# Rebuild only API service
+api:
+	@docker compose up -d --build api
 
-# Clean the binary
-clean:
-	@echo "Cleaning..."
-	@rm -f main
+# Database
+db-shell:
+	@docker compose exec psql_bp psql -U $(DB_USERNAME) -d $(DB_DATABASE)
 
-# # Live Reload
-# watch:
-# 	@if command -v air >/dev/null 2>&1; then \
-#         air; \
-#         echo "Watching..."; \
-#     else \
-#         echo "Installing air..."; \
-#         go install github.com/air-verse/air@latest; \
-#         air; \
-#         echo "Watching..."; \
-#     fi
-# # @powershell -ExecutionPolicy Bypass -Command "if (Get-Command air -ErrorAction SilentlyContinue) { \
-# 		air; \
-# 		Write-Output 'Watching...'; \
-# 	} else { \
-# 		Write-Output 'Installing air...'; \
-# 		go install github.com/air-verse/air@latest; \
-# 		air; \
-# 		Write-Output 'Watching...'; \
-# 	}"
+# Development: Reset DB and apply schemas directly
+db-reset:
+	@docker compose exec psql_bp psql -U $(DB_USERNAME) -d $(DB_DATABASE) -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	@for file in internal/database/sql/schemas/*.sql; do \
+		docker compose exec -T psql_bp psql -U $(DB_USERNAME) -d $(DB_DATABASE) < $$file; \
+	done
 
-# # Generate Go code from SQL queries using sqlc
-# sqlc-gen:
-# 	@echo "Generating Go code from SQL queries..."
-# 	@sqlc generate
-
-# .PHONY: all build run test clean watch docker-run docker-down itest
-
-# Live Reload
-watch:
-	@if command -v air >/dev/null 2>&1; then \
-        air; \
-        echo "Watching..."; \
-    else \
-        echo "Installing air..."; \
-        go install github.com/air-verse/air@latest; \
-        air; \
-        echo "Watching..."; \
-    fi
-
-# Generate Go code from SQL queries using sqlc (Docker-based)
-sqlc-gen:
-	@echo "Generating Go code from SQL queries..."
-	@docker run --rm -v "$$(pwd):/src" -w /src sqlc/sqlc:1.27.0 generate
-
-# Database migrations (requires migrations folder)
-migrate-up:
-	@docker compose --profile tools run --rm golang-migrate \
-		-path /migrations \
-		-database "postgres://${DB_USERNAME}:${DB_PASSWORD}@psql_bp:5432/${DB_DATABASE}?sslmode=disable" \
-		up
-
-migrate-down:
-	@docker compose --profile tools run --rm golang-migrate \
-		-path /migrations \
-		-database "postgres://${DB_USERNAME}:${DB_PASSWORD}@psql_bp:5432/${DB_DATABASE}?sslmode=disable" \
-		down 1
-
+# Migrations
 migrate-create:
 	@read -p "Enter migration name: " name; \
 	docker compose --profile tools run --rm golang-migrate \
 		create -ext sql -dir /migrations $$name
 
-# Quick setup for new developers
-setup:
-	@echo "Setting up development environment..."
-	@docker compose --profile tools run --rm sqlc
-	@echo "Building containers..."
-	@docker compose build
-	@echo "Setup complete! Run 'make docker-up' to start"
+migrate-up:
+	@docker compose --profile tools run --rm golang-migrate -path /migrations -database "postgres://$(DB_USERNAME):$(DB_PASSWORD)@psql_bp:5432/$(DB_DATABASE)?sslmode=disable" up
 
-# Start fresh (reset everything)
-fresh: docker-down
-	@docker compose down -v
-	@docker compose --profile tools run --rm sqlc
-	@docker compose up --build
+migrate-down:
+	@docker compose --profile tools run --rm golang-migrate -path /migrations -database "postgres://$(DB_USERNAME):$(DB_PASSWORD)@psql_bp:5432/$(DB_DATABASE)?sslmode=disable" down 1
 
-.PHONY: all build run test clean watch docker-up docker-down itest sqlc-gen migrate-up migrate-down migrate-create setup fresh
+# SQL generation
+sqlc:
+	@docker run --rm -v "$(PWD):/src" -w /src sqlc/sqlc:1.27.0 generate
 
+# Testing
+test:
+	@go test ./...
 
-get-win-ip:
-	@cat /etc/resolv.conf | grep nameserver | awk '{print $2}'  
+itest:
+	@go test ./internal/database -v
+
+# Clean
+clean:
+	@rm -rf bin/
+
+# Logs
+logs:
+	@docker compose logs -f api
+
+.PHONY: build run watch dev dev-api dev-detach dev-down dev-logs prod prod-down api db-shell db-reset migrate-create migrate-up migrate-down sqlc test itest clean logs
