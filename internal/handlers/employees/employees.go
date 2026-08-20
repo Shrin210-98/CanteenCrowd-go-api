@@ -78,6 +78,21 @@ func (h *Handler) ListEmployees(w http.ResponseWriter, r *http.Request) {
 	utils.JsonResponse(w, http.StatusOK, map[string]any{"data": employees, "message": "Employees retrieved successfully"})
 }
 
+type CreateEmployeeRequest struct {
+	FirstName             string    `json:"firstName" validate:"required,min=2,max=100"`
+	LastName              string    `json:"lastName" validate:"required,min=2,max=100"`
+	Email                 string    `json:"email" validate:"required,email"`
+	Phone                 *string   `json:"phone,omitempty" validate:"omitempty,min=10,max=15"`
+	Address               *string   `json:"address,omitempty" validate:"omitempty,max=500"`
+	HireDate              string    `json:"hireDate" validate:"required,datetime=2006-01-02"`
+	PositionID            uuid.UUID `json:"positionId" validate:"required,uuid"`
+	DepartmentID          uuid.UUID `json:"departmentId" validate:"required,uuid"`
+	Salary                *float64  `json:"salary,omitempty" validate:"omitempty,min=0"`
+	EmergencyContactName  *string   `json:"emergencyContactName,omitempty" validate:"omitempty,min=2,max=100"`
+	EmergencyContactPhone *string   `json:"emergencyContactPhone,omitempty" validate:"omitempty,min=10,max=15"`
+	ProfileDescription    *string   `json:"profileDescription,omitempty" validate:"omitempty,max=1000"`
+}
+
 func (h *Handler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := getTenantID(r)
 	if !ok {
@@ -85,20 +100,7 @@ func (h *Handler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		FirstName             string    `json:"firstName"`
-		LastName              string    `json:"lastName"`
-		Email                 string    `json:"email"`
-		Phone                 *string   `json:"phone,omitempty"`
-		Address               *string   `json:"address,omitempty"`
-		HireDate              string    `json:"hireDate"`
-		PositionID            uuid.UUID `json:"positionId"`
-		DepartmentID          uuid.UUID `json:"departmentId"`
-		Salary                *float64  `json:"salary,omitempty"`
-		EmergencyContactName  *string   `json:"emergencyContactName,omitempty"`
-		EmergencyContactPhone *string   `json:"emergencyContactPhone,omitempty"`
-		ProfileDescription    *string   `json:"profileDescription,omitempty"`
-	}
+	var req CreateEmployeeRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding JSON: %v", err)
@@ -106,17 +108,12 @@ func (h *Handler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.FirstName == "" || req.LastName == "" || req.Email == "" {
-		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "First name, last name and email are required"})
+	if validationErrors := utils.ValidateStruct(req); validationErrors != nil {
+		utils.ValidationErrorResponse(w, validationErrors)
 		return
 	}
 
-	// Parse hire date (now time.Time, not pgtype.Date)
-	hireDate, err := time.Parse("2006-01-02", req.HireDate)
-	if err != nil {
-		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid hire date format. Use YYYY-MM-DD"})
-		return
-	}
+	hireDate, _ := time.Parse("2006-01-02", req.HireDate)
 
 	// Convert salary to pgtype.Numeric
 	salary := toNumeric(req.Salary)
@@ -149,6 +146,23 @@ func (h *Handler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
 		map[string]any{"data": employee, "message": "Employee created successfully"})
 }
 
+type UpdateEmployeeRequest struct {
+	FirstName             string    `json:"firstName" validate:"required,min=2,max=100"`
+	LastName              string    `json:"lastName" validate:"required,min=2,max=100"`
+	Email                 string    `json:"email" validate:"required,email"`
+	Phone                 *string   `json:"phone,omitempty" validate:"omitempty,min=10,max=15"`
+	Address               *string   `json:"address,omitempty" validate:"omitempty,max=500"`
+	HireDate              string    `json:"hireDate" validate:"required,datetime=2006-01-02"`
+	TerminationDate       *string   `json:"terminationDate,omitempty" validate:"omitempty,datetime=2006-01-02"`
+	PositionID            uuid.UUID `json:"positionId" validate:"required,uuid"`
+	DepartmentID          uuid.UUID `json:"departmentId" validate:"required,uuid"`
+	Salary                *float64  `json:"salary,omitempty" validate:"omitempty,min=0"`
+	EmergencyContactName  *string   `json:"emergencyContactName,omitempty" validate:"omitempty,min=2,max=100"`
+	EmergencyContactPhone *string   `json:"emergencyContactPhone,omitempty" validate:"omitempty,min=10,max=15"`
+	ProfileDescription    *string   `json:"profileDescription,omitempty" validate:"omitempty,max=1000"`
+	IsActive              *bool     `json:"isActive,omitempty"`
+}
+
 func (h *Handler) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := getTenantID(r)
 	if !ok {
@@ -162,42 +176,25 @@ func (h *Handler) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		FirstName             string    `json:"firstName"`
-		LastName              string    `json:"lastName"`
-		Email                 string    `json:"email"`
-		Phone                 *string   `json:"phone,omitempty"`
-		Address               *string   `json:"address,omitempty"`
-		HireDate              string    `json:"hireDate"`
-		TerminationDate       *string   `json:"terminationDate,omitempty"`
-		PositionID            uuid.UUID `json:"positionId"`
-		DepartmentID          uuid.UUID `json:"departmentId"`
-		Salary                *float64  `json:"salary,omitempty"`
-		EmergencyContactName  *string   `json:"emergencyContactName,omitempty"`
-		EmergencyContactPhone *string   `json:"emergencyContactPhone,omitempty"`
-		ProfileDescription    *string   `json:"profileDescription,omitempty"`
-		IsActive              *bool     `json:"isActive,omitempty"`
-	}
+	var req UpdateEmployeeRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid request body"})
 		return
 	}
 
-	// Parse hire date (time.Time)
-	hireDate, err := time.Parse("2006-01-02", req.HireDate)
-	if err != nil {
-		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid hire date format"})
+	if validationErrors := utils.ValidateStruct(req); validationErrors != nil {
+		utils.ValidationErrorResponse(w, validationErrors)
 		return
 	}
+
+	hireDate, _ := time.Parse("2006-01-02", req.HireDate)
 
 	// Parse termination date (*time.Time)
 	var terminationDate *time.Time
 	if req.TerminationDate != nil && *req.TerminationDate != "" {
-		t, err := time.Parse("2006-01-02", *req.TerminationDate)
-		if err == nil {
-			terminationDate = &t
-		}
+		t, _ := time.Parse("2006-01-02", *req.TerminationDate)
+		terminationDate = &t
 	}
 
 	isActive := true
