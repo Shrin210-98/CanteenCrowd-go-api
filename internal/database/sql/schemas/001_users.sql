@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 CREATE TABLE tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -58,13 +56,31 @@ CREATE TABLE user_profiles (
     phone TEXT,
     avatar_url TEXT,
     timezone TEXT,
-    permissions JSONB NOT NULL DEFAULT '{
-            "system": { "index": true, "restart": true, "backup": true, "shutdown": true },
-            "dashboard" : {"index" : true},
-            "users": { "index": true, "view": true, "add": true, "edit": true, "delete": true },
-            "employees": { "index": true, "view": true, "add": true, "archive": true },
-            "clients": { "index": true, "view": true, "add": true, "edit": true, "delete": true }
-    }'::jsonb,
+    permissions JSONB NOT NULL DEFAULT '[
+            { "label": "Dashboard", "name": "dashboard", "enabled": true },
+            {
+            "label": "Employees",
+            "name": "employees",
+            "enabled": true,
+            "nested": [
+                { "label": "View Details", "name": "view", "enabled": true },
+                { "label": "Add Employee", "name": "add", "enabled": true },
+                { "label": "Edit Employee", "name": "edit", "enabled": true },
+                { "label": "Delete Employee", "name": "delete", "enabled": true },
+                { "label": "Departments", "name": "departments", "enabled": true }
+            ]
+            },
+            {
+            "label": "CC Specials",
+            "name": "cc-specials",
+            "enabled": true,
+            "nested": [
+                { "label": "View List", "name": "index", "enabled": true },
+                { "label": "Add Menu", "name": "add", "enabled": true },
+                { "label": "Category Template", "name": "category-template", "enabled": true }
+            ]
+            }
+        ]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
@@ -113,7 +129,7 @@ CREATE TABLE roles (
     tenant_id UUID NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
-    permission_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+    permission_template JSONB NOT NULL DEFAULT '[]'::jsonb,
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -124,6 +140,27 @@ CREATE TABLE roles (
 );
 
 CREATE INDEX idx_roles_tenant ON roles(tenant_id);
+
+-- Create triggers for updated_at
+CREATE TRIGGER update_tenants_updated_at
+BEFORE UPDATE ON tenants
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_profiles_updated_at
+BEFORE UPDATE ON user_profiles
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_roles_updated_at
+BEFORE UPDATE ON roles
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
 
 -- -- Multiple Tenants access to Users
 -- -- Add a user_tenants junction table for many-to-many relationship

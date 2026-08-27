@@ -438,3 +438,48 @@ LEFT JOIN users u ON u.tenant_id = t.id
 LEFT JOIN roles r ON r.tenant_id = t.id
 WHERE t.id = $1
 GROUP BY t.id;
+
+-- ============ USER MANAGEMENT QUERIES ============
+
+-- name: ListUsersWithFilters :many
+SELECT 
+    u.*,
+    e.id as employee_id,
+    e.first_name,
+    e.last_name,
+    d.name as department_name,
+    p.title as position_title
+FROM users u
+LEFT JOIN employees e ON u.id = e.user_id
+LEFT JOIN departments d ON e.department_id = d.id
+LEFT JOIN positions p ON e.position_id = p.id
+WHERE 
+    u.tenant_id = @tenant_id
+AND 
+    u.deleted_at IS NULL
+AND
+    (u.username ILIKE '%' || @search::text || '%' 
+     OR u.email ILIKE '%' || @search::text || '%'
+     OR e.first_name ILIKE '%' || @search::text || '%'
+     OR e.last_name ILIKE '%' || @search::text || '%'
+     OR @search::text = '')
+AND
+    (u.user_type = @user_type OR @user_type = '')
+ORDER BY u.created_at DESC
+LIMIT @limit_count OFFSET @offset_count;
+
+-- name: CountUsersWithFilters :one
+SELECT COUNT(*) FROM users u
+LEFT JOIN employees e ON u.id = e.user_id
+WHERE 
+    u.tenant_id = @tenant_id
+AND 
+    u.deleted_at IS NULL
+AND
+    (u.username ILIKE '%' || @search::text || '%' 
+     OR u.email ILIKE '%' || @search::text || '%'
+     OR e.first_name ILIKE '%' || @search::text || '%'
+     OR e.last_name ILIKE '%' || @search::text || '%'
+     OR @search::text = '')
+AND
+    (u.user_type = @user_type OR @user_type = '');

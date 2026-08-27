@@ -205,6 +205,36 @@ func (q *Queries) CountUsersByType(ctx context.Context, userType string) (int64,
 	return count, err
 }
 
+const countUsersWithFilters = `-- name: CountUsersWithFilters :one
+SELECT COUNT(*) FROM users u
+LEFT JOIN employees e ON u.id = e.user_id
+WHERE 
+    u.tenant_id = $1
+AND 
+    u.deleted_at IS NULL
+AND
+    (u.username ILIKE '%' || $2::text || '%' 
+     OR u.email ILIKE '%' || $2::text || '%'
+     OR e.first_name ILIKE '%' || $2::text || '%'
+     OR e.last_name ILIKE '%' || $2::text || '%'
+     OR $2::text = '')
+AND
+    (u.user_type = $3 OR $3 = '')
+`
+
+type CountUsersWithFiltersParams struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	Search   string    `json:"search"`
+	UserType string    `json:"userType"`
+}
+
+func (q *Queries) CountUsersWithFilters(ctx context.Context, arg CountUsersWithFiltersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsersWithFilters, arg.TenantID, arg.Search, arg.UserType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createRefreshToken = `-- name: CreateRefreshToken :one
 
 INSERT INTO refresh_tokens (user_id, tenant_id, token, expires_at) 
@@ -1631,6 +1661,122 @@ func (q *Queries) ListUsersByType(ctx context.Context, userType string) ([]User,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsersWithFilters = `-- name: ListUsersWithFilters :many
+
+SELECT 
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    e.id as employee_id,
+    e.first_name,
+    e.last_name,
+    d.name as department_name,
+    p.title as position_title
+FROM users u
+LEFT JOIN employees e ON u.id = e.user_id
+LEFT JOIN departments d ON e.department_id = d.id
+LEFT JOIN positions p ON e.position_id = p.id
+WHERE 
+    u.tenant_id = $1
+AND 
+    u.deleted_at IS NULL
+AND
+    (u.username ILIKE '%' || $2::text || '%' 
+     OR u.email ILIKE '%' || $2::text || '%'
+     OR e.first_name ILIKE '%' || $2::text || '%'
+     OR e.last_name ILIKE '%' || $2::text || '%'
+     OR $2::text = '')
+AND
+    (u.user_type = $3 OR $3 = '')
+ORDER BY u.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListUsersWithFiltersParams struct {
+	TenantID    uuid.UUID `json:"tenantId"`
+	Search      string    `json:"search"`
+	UserType    string    `json:"userType"`
+	OffsetCount int32     `json:"offsetCount"`
+	LimitCount  int32     `json:"limitCount"`
+}
+
+type ListUsersWithFiltersRow struct {
+	ID                 uuid.UUID  `json:"id"`
+	TenantID           uuid.UUID  `json:"tenantId"`
+	Username           string     `json:"username"`
+	Email              string     `json:"email"`
+	PasswordHash       string     `json:"passwordHash"`
+	LastLogin          *time.Time `json:"lastLogin"`
+	LoginAttempts      int32      `json:"loginAttempts"`
+	IsLocked           bool       `json:"isLocked"`
+	LockedUntil        *time.Time `json:"lockedUntil"`
+	PasswordResetToken *string    `json:"passwordResetToken"`
+	TokenExpiry        *time.Time `json:"tokenExpiry"`
+	MustChangePassword bool       `json:"mustChangePassword"`
+	EmailVerified      bool       `json:"emailVerified"`
+	MfaEnabled         bool       `json:"mfaEnabled"`
+	LastPasswordChange *time.Time `json:"lastPasswordChange"`
+	UserType           string     `json:"userType"`
+	DeletedAt          *time.Time `json:"deletedAt"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+	EmployeeID         *uuid.UUID `json:"employeeId"`
+	FirstName          *string    `json:"firstName"`
+	LastName           *string    `json:"lastName"`
+	DepartmentName     *string    `json:"departmentName"`
+	PositionTitle      *string    `json:"positionTitle"`
+}
+
+// ============ USER MANAGEMENT QUERIES ============
+func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error) {
+	rows, err := q.db.Query(ctx, listUsersWithFilters,
+		arg.TenantID,
+		arg.Search,
+		arg.UserType,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersWithFiltersRow{}
+	for rows.Next() {
+		var i ListUsersWithFiltersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Username,
+			&i.Email,
+			&i.PasswordHash,
+			&i.LastLogin,
+			&i.LoginAttempts,
+			&i.IsLocked,
+			&i.LockedUntil,
+			&i.PasswordResetToken,
+			&i.TokenExpiry,
+			&i.MustChangePassword,
+			&i.EmailVerified,
+			&i.MfaEnabled,
+			&i.LastPasswordChange,
+			&i.UserType,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EmployeeID,
+			&i.FirstName,
+			&i.LastName,
+			&i.DepartmentName,
+			&i.PositionTitle,
 		); err != nil {
 			return nil, err
 		}
