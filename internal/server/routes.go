@@ -22,13 +22,12 @@ func registerRoutesV1(mux *http.ServeMux, handler *handlers.Handler) {
 
 	mux.HandleFunc("POST   /login", handler.Login)
 	mux.HandleFunc("POST   /register", handler.Register)
-	mux.HandleFunc("GET    /me", handler.GetUserProfile)
-	mux.HandleFunc("PUT    /me", handler.UpdateUserProfile)
 
-	mux.HandleFunc("GET    /users", handler.Users.ListUsers)
-	mux.HandleFunc("POST   /users", handler.Users.CreateUser)
-	mux.HandleFunc("PUT    /users", handler.Users.UpdateUser)
-	mux.HandleFunc("DELETE /users/{id}", handler.Users.DeleteUser)
+	// mux.HandleFunc("GET    /users", handler.ListUsers)
+	// mux.HandleFunc("POST   /users", handler.CreateUser)
+	// mux.HandleFunc("PUT    /users", handler.UpdateUser)
+	// mux.HandleFunc("DELETE /users/{id}", handler.DeleteUser)
+	mux.HandleFunc("GET    /user-profile", handler.GetUserProfile)
 
 	mux.HandleFunc("GET    /employees", handler.Employees.ListEmployees)
 	// mux.HandleFunc("GET    /employees", handler.SearchEmployees)
@@ -47,4 +46,15 @@ func registerRoutesV1(mux *http.ServeMux, handler *handlers.Handler) {
 	mux.HandleFunc("PUT    /employees/positions", handler.Employees.UpdatePosition)
 	mux.HandleFunc("DELETE /employees/positions/{id}", handler.Employees.DeletePosition)
 
+}
+
+func OldRegisterRoutes(handler *handlers.Handler) http.Handler {
+	mux := http.NewServeMux()
+
+	// mux.HandleFunc("GET    /departments", handler.ListDepartments)
+	// mux.HandleFunc("POST   /departments", handler.CreateDepartment)
+	// mux.HandleFunc("PUT    /departments", handler.UpdateDepartment)
+	// mux.HandleFunc("DELETE /departments/{id}", handler.DeleteDepartment)
+
+	return mux
 }

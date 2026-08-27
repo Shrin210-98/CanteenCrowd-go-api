@@ -14,7 +14,6 @@ type Querier interface {
 	AddItemToMenuCategory(ctx context.Context, arg AddItemToMenuCategoryParams) error
 	CheckEmailExists(ctx context.Context, email string) (bool, error)
 	CheckEmailExistsInTenant(ctx context.Context, arg CheckEmailExistsInTenantParams) (bool, error)
-	CheckEmployeeHasUser(ctx context.Context, arg CheckEmployeeHasUserParams) (bool, error)
 	CheckTenantSlugExists(ctx context.Context, slug string) (bool, error)
 	CheckUsernameExists(ctx context.Context, username string) (bool, error)
 	CheckUsernameExistsInTenant(ctx context.Context, arg CheckUsernameExistsInTenantParams) (bool, error)
@@ -29,7 +28,6 @@ type Querier interface {
 	CountTenants(ctx context.Context) (int64, error)
 	CountUsersByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountUsersByType(ctx context.Context, userType string) (int64, error)
-	CountUsersWithFilters(ctx context.Context, arg CountUsersWithFiltersParams) (int64, error)
 	CreateDepartment(ctx context.Context, arg CreateDepartmentParams) (Department, error)
 	CreateEmployee(ctx context.Context, arg CreateEmployeeParams) (Employee, error)
 	CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error)
@@ -66,7 +64,6 @@ type Querier interface {
 	GetActiveMenus(ctx context.Context) ([]Menu, error)
 	GetDepartmentByID(ctx context.Context, arg GetDepartmentByIDParams) (Department, error)
 	GetEmployeeById(ctx context.Context, arg GetEmployeeByIdParams) (Employee, error)
-	GetEmployeeByUserID(ctx context.Context, arg GetEmployeeByUserIDParams) (Employee, error)
 	GetMenuByID(ctx context.Context, id int32) (Menu, error)
 	GetMenuItemByID(ctx context.Context, id int32) (MenuItem, error)
 	GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsByCategoryParams) ([]MenuItem, error)
@@ -93,16 +90,12 @@ type Querier interface {
 	GetUserWithProfile(ctx context.Context, id uuid.UUID) (GetUserWithProfileRow, error)
 	GetUserWithTenant(ctx context.Context, id uuid.UUID) (GetUserWithTenantRow, error)
 	GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]User, error)
-	LinkUserToEmployee(ctx context.Context, arg LinkUserToEmployeeParams) (Employee, error)
 	ListAllTenants(ctx context.Context) ([]Tenant, error)
 	ListDefaultRolesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Role, error)
 	// ============ DEPARTMENT QUERIES ============
 	ListDepartments(ctx context.Context, tenantID uuid.UUID) ([]Department, error)
 	// ============ EMPLOYEE QUERIES ============
 	ListEmployees(ctx context.Context, arg ListEmployeesParams) ([]Employee, error)
-	// ============ EMPLOYEE-USER LINK QUERIES ============
-	ListEmployeesEligibleForUserCreation(ctx context.Context, tenantID uuid.UUID) ([]Employee, error)
-	ListEmployeesWithUserStatus(ctx context.Context, tenantID uuid.UUID) ([]ListEmployeesWithUserStatusRow, error)
 	// ============ POSITION QUERIES ============
 	ListPositions(ctx context.Context, tenantID uuid.UUID) ([]Position, error)
 	ListRolesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Role, error)
@@ -113,8 +106,6 @@ type Querier interface {
 	ListUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]User, error)
 	ListUsersByTenantAndType(ctx context.Context, arg ListUsersByTenantAndTypeParams) ([]User, error)
 	ListUsersByType(ctx context.Context, userType string) ([]User, error)
-	// ============ USER MANAGEMENT QUERIES ============
-	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
 	ListUsersWithProfilesByTenant(ctx context.Context, tenantID uuid.UUID) ([]ListUsersWithProfilesByTenantRow, error)
 	MarkTokenUsed(ctx context.Context, id uuid.UUID) error
 	SearchEmployees(ctx context.Context, arg SearchEmployeesParams) ([]SearchEmployeesRow, error)
@@ -124,7 +115,6 @@ type Querier interface {
 	SoftDeletePosition(ctx context.Context, arg SoftDeletePositionParams) error
 	SoftDeleteTenant(ctx context.Context, id uuid.UUID) error
 	SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) error
-	UnlinkUserFromEmployee(ctx context.Context, arg UnlinkUserFromEmployeeParams) error
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error)
 	UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) (Employee, error)
 	UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemptsParams) (User, error)

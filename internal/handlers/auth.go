@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"ccms.com/api/internal/constants"
 	"ccms.com/api/internal/database"
 	"ccms.com/api/internal/utils"
 	"github.com/google/uuid"
@@ -131,8 +130,14 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get default permissions for tenant_owner
-	defaultPermissions := constants.MustToJSON(constants.DefaultTenantOwnerPermissions())
+	// Create user profile with default permissions
+	defaultPermissions := json.RawMessage(`{
+        "system": { "index": true, "restart": true, "backup": true, "shutdown": true },
+        "dashboard": { "index": true },
+        "users": { "index": true, "view": true, "add": true, "edit": true, "delete": true },
+        "employees": { "index": true, "view": true, "add": true, "archive": true },
+        "clients": { "index": true, "view": true, "add": true, "edit": true, "delete": true }
+    }`)
 
 	var fullName *string
 	if req.FullName != "" {
@@ -230,18 +235,18 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var creds struct {
-		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=8"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid Request")
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Invalid Request"})
 		return
 	}
 
 	// Validate input
-	if validationErrors := utils.ValidateStruct(creds); validationErrors != nil {
-		utils.ValidationErrorResponse(w, validationErrors)
+	if creds.Email == "" || creds.Password == "" {
+		utils.JsonResponse(w, http.StatusBadRequest, map[string]any{"message": "Email and password are required"})
 		return
 	}
 
@@ -249,7 +254,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	user, err := h.db.GetUserByEmail(r.Context(), creds.Email)
 	if err != nil {
 		log.Printf("Login failed - user not found: %v", err)
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid credentials")
+		utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Invalid credentials"})
 		return
 	}
 
@@ -257,7 +262,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	if user.IsLocked {
 		if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
 			log.Printf("Login failed - account locked for user: %s", user.Email)
-			utils.ErrorResponse(w, http.StatusForbidden, "Account is locked. Please try again later.")
+			utils.JsonResponse(w, http.StatusForbidden, map[string]any{
+				"message":     "Account is locked. Please try again later.",
+				"lockedUntil": user.LockedUntil,
+			})
 			return
 		}
 		// If lock has expired, reset lock status
@@ -282,7 +290,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		// Lock account after 5 failed attempts
 		if newAttempts >= 5 {
 			isLocked = true
-			lockTime := time.Now().Add(15 * time.Minute)
+			lockTime := time.Now().Add(15 * time.Minute) // Lock for 15 minutes
 			lockedUntil = &lockTime
 			log.Printf("Account locked for user: %s after %d failed attempts", user.Email, newAttempts)
 		}
@@ -297,12 +305,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Failed to update login attempts: %v", err)
 		}
 
-		attemptsLeft := 5 - newAttempts
-		if attemptsLeft < 0 {
-			attemptsLeft = 0
-		}
-
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Invalid credentials")
+		utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{
+			"message":      "Invalid credentials",
+			"attemptsLeft": 5 - newAttempts,
+		})
 		return
 	}
 
@@ -345,201 +351,61 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	token, err := utils.GenerateTokens(user.ID, user.TenantID, h.jwtSecret)
 	if err != nil {
 		log.Printf("Failed to generate token: %v", err)
-		utils.ErrorResponse(w, http.StatusInternalServerError, "Failed to generate token")
+		utils.JsonResponse(w, http.StatusInternalServerError, map[string]any{"message": "Failed to generate token"})
 		return
 	}
 
-	responseData := map[string]any{
-		"token":     token,
-		"tokenType": "Bearer",
-		"expiresIn": 86400, // 24 hours in seconds
-		"user": map[string]any{
-			"id":       user.ID,
-			"tenantId": user.TenantID,
-			"username": user.Username,
-			"email":    user.Email,
-			"userType": user.UserType,
-		},
+	// Get user profile (optional)
+	profile, err := h.db.GetUserProfile(r.Context(), user.ID)
+	if err != nil {
+		log.Printf("Profile not found for user: %v", err)
+		// Continue without profile - not critical
 	}
 
-	// Include mustChangePassword flag if needed
+	// Prepare response
+	responseData := map[string]any{
+		"user": map[string]any{
+			"id":            user.ID,
+			"tenantId":      user.TenantID,
+			"username":      user.Username,
+			"email":         user.Email,
+			"lastLogin":     now,
+			"userType":      user.UserType,
+			"emailVerified": user.EmailVerified,
+			"mfaEnabled":    user.MfaEnabled,
+			"createdAt":     user.CreatedAt,
+			"updatedAt":     user.UpdatedAt,
+		},
+		"token": token,
+	}
+
+	// Include profile if found
+	if profile.ID != uuid.Nil {
+		responseData["profile"] = map[string]any{
+			"id":          profile.ID,
+			"fullName":    profile.FullName,
+			"phone":       profile.Phone,
+			"avatarUrl":   profile.AvatarUrl,
+			"timezone":    profile.Timezone,
+			"permissions": profile.Permissions,
+		}
+	}
+
+	// Check if password change is required
 	if user.MustChangePassword {
 		responseData["mustChangePassword"] = true
 	}
 
-	utils.SuccessResponse(w, http.StatusOK, responseData, "Login successful")
-}
-
-func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
-	// Get user ID from context
-	userID, ok := r.Context().Value(constants.ContextKeyUserID).(uuid.UUID)
-	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	// Get user from database
-	user, err := h.db.GetUserByID(r.Context(), userID)
-	if err != nil {
-		utils.HandleDBError(w, err, "GetUserByID", "User not found")
-		return
-	}
-
-	// Build full user response
-	response := map[string]any{
-		"id":            user.ID,
-		"tenantId":      user.TenantID,
-		"username":      user.Username,
-		"email":         user.Email,
-		"userType":      user.UserType,
-		"emailVerified": user.EmailVerified,
-		"mfaEnabled":    user.MfaEnabled,
-		"lastLogin":     user.LastLogin,
-		"createdAt":     user.CreatedAt,
-		"updatedAt":     user.UpdatedAt,
-	}
-
-	// Add employee info for staff users
-	if user.UserType == "staff" {
-		employee, err := h.db.GetEmployeeByUserID(r.Context(), database.GetEmployeeByUserIDParams{
-			UserID:   &user.ID,
-			TenantID: user.TenantID,
-		})
-		if err == nil && employee.ID != uuid.Nil {
-			response["employeeId"] = employee.ID
-			response["employeeName"] = employee.FirstName + " " + employee.LastName
-		}
-	}
-
-	// Add profile info if exists
-	profile, err := h.db.GetUserProfile(r.Context(), user.ID)
-	if err == nil && profile.ID != uuid.Nil {
-		if profile.FullName != nil {
-			response["fullName"] = *profile.FullName
-		}
-		if profile.Phone != nil {
-			response["phone"] = *profile.Phone
-		}
-		if profile.AvatarUrl != nil {
-			response["avatarUrl"] = *profile.AvatarUrl
-		}
-		if profile.Timezone != nil {
-			response["timezone"] = *profile.Timezone
-		}
-		if profile.Permissions != nil {
-			filteredPermissions, err := utils.FilterPermissionsFromJSON(profile.Permissions)
-			if err == nil {
-				// Send as flat array
-				flatPermissions := utils.FlattenPermissions(filteredPermissions)
-				response["permissions"] = flatPermissions
-			}
-		}
-	}
-
-	utils.SuccessResponse(w, http.StatusOK, response, "Profile retrieved successfully")
-}
-
-func (h *Handler) UpdateUserProfile(w http.ResponseWriter, r *http.Request) {
-	// Get user ID from context
-	userID, ok := r.Context().Value(constants.ContextKeyUserID).(uuid.UUID)
-	if !ok {
-		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	var req struct {
-		Username *string `json:"username,omitempty" validate:"omitempty,min=3,max=50"`
-		Email    *string `json:"email,omitempty" validate:"omitempty,email"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	if validationErrors := utils.ValidateStruct(req); validationErrors != nil {
-		utils.ValidationErrorResponse(w, validationErrors)
-		return
-	}
-
-	// Get current user
-	currentUser, err := h.db.GetUserByID(r.Context(), userID)
-	if err != nil {
-		utils.HandleDBError(w, err, "GetUserByID", "User not found")
-		return
-	}
-
-	// Check username if provided
-	if req.Username != nil && *req.Username != currentUser.Username {
-		exists, err := h.db.CheckUsernameExists(r.Context(), *req.Username)
-		if err != nil {
-			utils.HandleDBError(w, err, "CheckUsernameExists")
-			return
-		}
-		if exists {
-			utils.ErrorResponse(w, http.StatusConflict, "Username already exists")
-			return
-		}
-	}
-
-	// Check email if provided
-	if req.Email != nil && *req.Email != currentUser.Email {
-		exists, err := h.db.CheckEmailExists(r.Context(), *req.Email)
-		if err != nil {
-			utils.HandleDBError(w, err, "CheckEmailExists")
-			return
-		}
-		if exists {
-			utils.ErrorResponse(w, http.StatusConflict, "Email already exists")
-			return
-		}
-	}
-
-	// Build update params
-	updateParams := database.UpdateUserParams{
-		ID:                 userID,
-		Username:           currentUser.Username,
-		Email:              currentUser.Email,
-		LastLogin:          currentUser.LastLogin,
-		LoginAttempts:      currentUser.LoginAttempts,
-		IsLocked:           currentUser.IsLocked,
-		LockedUntil:        currentUser.LockedUntil,
-		PasswordResetToken: currentUser.PasswordResetToken,
-		TokenExpiry:        currentUser.TokenExpiry,
-		MustChangePassword: currentUser.MustChangePassword,
-		EmailVerified:      currentUser.EmailVerified,
-		MfaEnabled:         currentUser.MfaEnabled,
-		LastPasswordChange: currentUser.LastPasswordChange,
-		UserType:           currentUser.UserType,
-		TenantID:           currentUser.TenantID,
-	}
-
-	if req.Username != nil {
-		updateParams.Username = *req.Username
-	}
-	if req.Email != nil {
-		updateParams.Email = *req.Email
-		updateParams.EmailVerified = false
-	}
-
-	updatedUser, err := h.db.UpdateUser(r.Context(), updateParams)
-	if err != nil {
-		utils.HandleDBError(w, err, "UpdateUser")
-		return
-	}
-
-	response := map[string]any{
-		"id":            updatedUser.ID,
-		"username":      updatedUser.Username,
-		"email":         updatedUser.Email,
-		"tenantId":      updatedUser.TenantID,
-		"userType":      updatedUser.UserType,
-		"emailVerified": updatedUser.EmailVerified,
-		"createdAt":     updatedUser.CreatedAt,
-		"updatedAt":     updatedUser.UpdatedAt,
-	}
-
-	utils.SuccessResponse(w, http.StatusOK, response, "Profile updated successfully")
+	utils.JsonResponse(w, http.StatusOK, map[string]any{
+		"data":    responseData,
+		"message": "Successfully Logged In",
+	})
+	// Example Login Request:
+	//
+	//	{
+	//	    "email": "john@example.com",
+	//	    "password": "SecurePass123!"
+	//	}
 }
 
 // func (h *Handler) Register_v1(w http.ResponseWriter, r *http.Request) {
