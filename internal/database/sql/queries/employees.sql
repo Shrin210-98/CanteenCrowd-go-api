@@ -201,3 +201,50 @@ AND
     (e.hire_date >= @hire_date_start OR @hire_date_start IS NULL)
 AND
     (e.hire_date <= @hire_date_end OR @hire_date_end IS NULL);
+
+
+-- ============ EMPLOYEE-USER LINK QUERIES ============
+
+-- name: ListEmployeesEligibleForUserCreation :many
+SELECT e.* 
+FROM employees e
+LEFT JOIN users u ON e.user_id = u.id
+WHERE e.tenant_id = $1 
+  AND e.user_id IS NULL 
+  AND e.is_active = TRUE
+  AND e.deleted_at IS NULL
+ORDER BY e.first_name, e.last_name;
+
+-- name: GetEmployeeByUserID :one
+SELECT * FROM employees 
+WHERE user_id = $1 AND tenant_id = $2 AND is_active = TRUE;
+
+-- name: LinkUserToEmployee :one
+UPDATE employees 
+SET user_id = $2, updated_at = NOW()
+WHERE id = $1 AND tenant_id = $3 AND user_id IS NULL
+RETURNING *;
+
+-- name: UnlinkUserFromEmployee :exec
+UPDATE employees 
+SET user_id = NULL, updated_at = NOW()
+WHERE id = $1 AND tenant_id = $2;
+
+-- name: CheckEmployeeHasUser :one
+SELECT EXISTS(
+    SELECT 1 FROM employees 
+    WHERE id = $1 AND tenant_id = $2 AND user_id IS NOT NULL
+) AS has_user;
+
+-- name: ListEmployeesWithUserStatus :many
+SELECT 
+    e.*,
+    CASE WHEN e.user_id IS NOT NULL THEN TRUE ELSE FALSE END as has_user_account,
+    u.username as user_username,
+    u.email as user_email,
+    u.user_type as user_type,
+    u.is_locked as user_locked
+FROM employees e
+LEFT JOIN users u ON e.user_id = u.id AND u.deleted_at IS NULL
+WHERE e.tenant_id = $1 AND e.is_active = TRUE
+ORDER BY e.first_name, e.last_name;
