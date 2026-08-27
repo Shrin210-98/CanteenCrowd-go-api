@@ -24,9 +24,6 @@ dev:
 dev-detach:
 	@docker compose -f docker-compose.dev.yml up --build -d
 
-dev-api:
-	@docker compose -f docker-compose.dev.yml up -d --build api
-
 dev-down:
 	@docker compose -f docker-compose.dev.yml down
 
@@ -86,4 +83,4 @@ clean:
 logs:
 	@docker compose logs -f api
 
-.PHONY: build run watch dev dev-api dev-detach dev-down dev-logs prod prod-down api db-shell db-reset migrate-create migrate-up migrate-down sqlc test itest clean logs
+.PHONY: build run watch dev dev-detach dev-down dev-logs prod prod-down api db-shell db-reset migrate-create migrate-up migrate-down sqlc test itest clean logs

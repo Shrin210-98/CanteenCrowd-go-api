@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"ccms.com/api/internal/constants"
 	"ccms.com/api/internal/database"
 	"ccms.com/api/internal/utils"
 	"github.com/google/uuid"
@@ -23,7 +24,7 @@ func NewHandler(querier database.Querier) *Handler {
 }
 
 func getTenantID(r *http.Request) (uuid.UUID, bool) {
-	tenantID, ok := r.Context().Value("tenantID").(uuid.UUID)
+	tenantID, ok := r.Context().Value(constants.ContextKeyTenantID).(uuid.UUID)
 	return tenantID, ok
 }
 

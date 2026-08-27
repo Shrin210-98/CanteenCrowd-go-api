@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"ccms.com/api/internal/constants"
 	"ccms.com/api/internal/utils"
 )
 
@@ -23,16 +24,7 @@ func CORSMiddleware(next http.Handler) http.HandlerFunc {
 		origin := r.Header.Get("Origin")
 		// log.Printf("CORS Debug - Method: %s, Path: %s, Origin: %s", r.Method, r.URL.Path, origin)
 
-		// Allow your frontend origin
-		allowedOrigins := []string{
-			"http://localhost:5174",
-			"http://localhost:5173",
-			"http://127.0.0.1:5174",
-			"http://127.0.0.1:5173",
-			"http://localhost:3000",
-		}
-
-		for _, allowed := range allowedOrigins {
+		for _, allowed := range constants.AllowedOrigins {
 			if origin == allowed {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -40,9 +32,10 @@ func CORSMiddleware(next http.Handler) http.HandlerFunc {
 			}
 		}
 
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "86400")
+		// Use constants for CORS headers
+		w.Header().Set("Access-Control-Allow-Methods", constants.AllowedMethods)
+		w.Header().Set("Access-Control-Allow-Headers", constants.AllowedHeaders)
+		w.Header().Set("Access-Control-Max-Age", constants.CORSMaxAge)
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -78,8 +71,8 @@ func RequireAuthMiddleware(next http.Handler) http.HandlerFunc {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "userID", userID)
-		ctx = context.WithValue(ctx, "tenantID", tenantID)
+		ctx := context.WithValue(r.Context(), constants.ContextKeyUserID, userID)
+		ctx = context.WithValue(ctx, constants.ContextKeyTenantID, tenantID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
