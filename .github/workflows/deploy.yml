@@ -45,7 +45,7 @@ jobs:
             fi
 
             echo "🔐 Setting up environment variables..."
-            cat > .env << 'ENVEOF'
+            cat > .env << ENVEOF
             DB_DATABASE=${{ secrets.DB_DATABASE }}
             DB_USERNAME=${{ secrets.DB_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
@@ -56,6 +56,7 @@ jobs:
             ENVEOF
 
             echo "🐳 Building and deploying containers..."
+            docker compose -f docker-compose.prod.yml down
             docker compose -f docker-compose.prod.yml up -d --build
 
             echo "🧹 Cleaning up old images..."
