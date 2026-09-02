@@ -49,18 +49,15 @@ jobs:
             curl -SL https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 \
               -o ~/.docker/cli-plugins/docker-buildx
             chmod +x ~/.docker/cli-plugins/docker-buildx
-
-            echo "🔐 Setting up environment variables..."
-            cat > .env << ENVEOF
-            DB_DATABASE=${{ secrets.DB_DATABASE }}
-            DB_USERNAME=${{ secrets.DB_USERNAME }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            DB_HOST=${{ secrets.DB_HOST }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            GIN_MODE=release
-            DB_SSLMODE=require
-            ENVEOF
+DB_DATABASE=${{ secrets.DB_DATABASE }}
+DB_USERNAME=${{ secrets.DB_USERNAME }}
+DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+DB_PORT=${{ secrets.DB_PORT }}
+DB_HOST=${{ secrets.DB_HOST }}
+JWT_SECRET=${{ secrets.JWT_SECRET }}
+GIN_MODE=release
+DB_SSLMODE=require
+ENVEOF
 
             echo "🐳 Building and deploying containers..."
             docker compose -f docker-compose.prod.yml down
