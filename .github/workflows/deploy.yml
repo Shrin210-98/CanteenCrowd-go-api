@@ -1,0 +1,73 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ec2-user/app
+
+            echo "📥 Pulling latest code..."
+            if [ -d ".git" ]; then
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/Shrin210-98/CanteenCrowd-go-api.git .
+            fi
+
+            echo "🔐 Setting up environment variables..."
+            cat > .env << 'ENVEOF'
+            DB_DATABASE=${{ secrets.DB_DATABASE }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_HOST=${{ secrets.DB_HOST }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            GIN_MODE=release
+            ENVEOF
+
+            echo "🐳 Building and deploying containers..."
+            docker compose -f docker-compose.prod.yml up -d --build
+
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+
+            echo "🔍 Checking deployment status..."
+            sleep 10
+            if docker compose -f docker-compose.prod.yml ps | grep -q "unhealthy\|exited"; then
+              echo "❌ Deployment failed!"
+              docker compose -f docker-compose.prod.yml logs --tail=50
+              exit 1
+            fi
+
+            echo "✅ Deployment successful!"
+            docker compose -f docker-compose.prod.yml ps
