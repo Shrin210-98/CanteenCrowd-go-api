@@ -52,3 +52,10 @@ fi
 echo "✅ Setup complete!"
 echo "⚠️  Run 'exit' and SSH back in for docker group permissions to take effect"
 echo "🚀 Then push to main to trigger your first deployment!"
+
+# ssh -i ~/.ssh/go-api-key.pem ec2-user@<EC2_PUBLIC_IP>
+# curl -fsSL https://raw.githubusercontent.com/Shrin210-98/CanteenCrowd-go-api/main/scripts/setup-ec2.sh | bash
+# exit
+# # SSH back in again
+# ssh -i ~/.ssh/go-api-key.pem ec2-user@<EC2_PUBLIC_IP>
+# docker --version  # verify ✅

@@ -19,23 +19,23 @@ watch:
 
 # Docker development (full stack with hot reload)
 dev:
-	@docker compose -f docker-compose.dev.yml up --build
+	@docker compose up --build
 
 dev-detach:
-	@docker compose -f docker-compose.dev.yml up --build -d
-
-dev-down:
-	@docker compose -f docker-compose.dev.yml down
-
-dev-logs:
-	@docker compose -f docker-compose.dev.yml logs -f api
-
-# Docker production
-prod:
 	@docker compose up --build -d
 
-prod-down:
+dev-down:
 	@docker compose down
+
+dev-logs:
+	@docker compose logs -f api
+
+# Production (explicitly uses prod file)
+prod:
+	@docker compose -f docker-compose.prod.yml up -d --build
+
+prod-down:
+	@docker compose -f docker-compose.prod.yml down
 
 # Rebuild only API service
 api:
@@ -64,6 +64,13 @@ migrate-up:
 migrate-down:
 	@docker compose --profile tools run --rm golang-migrate -path /migrations -database "postgres://$(DB_USERNAME):$(DB_PASSWORD)@psql_bp:5432/$(DB_DATABASE)?sslmode=disable" down 1
 
+# Production database commands (for EC2)
+prod-db-shell:
+	@docker compose -f docker-compose.prod.yml exec psql_bp psql -U $(DB_USERNAME) -d $(DB_DATABASE)
+
+prod-db-backup:
+	@docker compose -f docker-compose.prod.yml exec -T psql_bp pg_dump -U $(DB_USERNAME) -d $(DB_DATABASE) > backup_$(shell date +%Y%m%d_%H%M%S).sql
+
 # SQL generation
 sqlc:
 	@docker run --rm -v "$(PWD):/src" -w /src sqlc/sqlc:1.27.0 generate
@@ -83,4 +90,17 @@ clean:
 logs:
 	@docker compose logs -f api
 
-.PHONY: build run watch dev dev-detach dev-down dev-logs prod prod-down api db-shell db-reset migrate-create migrate-up migrate-down sqlc test itest clean logs
+# Setup EC2 (run once on server)
+setup-ec2:
+	@chmod +x scripts/setup-ec2.sh
+	@./scripts/setup-ec2.sh
+
+# Deploy to production (run on EC2)
+deploy-prod:
+	@git pull origin main
+	@make migrate-up || true
+	@make prod
+	@docker image prune -f
+	@docker compose -f docker-compose.prod.yml ps
+
+.PHONY: build run watch dev dev-detach dev-down dev-logs prod prod-down prod-restart prod-logs prod-ps api db-shell db-reset migrate-create migrate-up migrate-down migrate-status prod-db-shell prod-db-backup sqlc test itest test-coverage clean logs setup-ec2 deploy-prod
