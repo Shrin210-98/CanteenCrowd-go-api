@@ -212,7 +212,6 @@ LEFT JOIN users u ON e.user_id = u.id
 WHERE e.tenant_id = $1 
   AND e.user_id IS NULL 
   AND e.is_active = TRUE
-  AND e.deleted_at IS NULL
 ORDER BY e.first_name, e.last_name;
 
 -- name: GetEmployeeByUserID :one

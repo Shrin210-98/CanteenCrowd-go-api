@@ -58,8 +58,8 @@ WHERE t.id = $1;
 -- ============ USER QUERIES ============
 
 -- name: CreateUser :one
-INSERT INTO users (tenant_id, username, email, password_hash, user_type) 
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (tenant_id, username, email, password_hash, user_type, role_id, permissions_override) 
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -95,9 +95,12 @@ SET
     last_password_change = $13,
     user_type = $14,
     tenant_id = $15,
+    role_id = $16,
+    permissions_override = $17,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
+
 
 -- name: UpdatePassword :one
 UPDATE users 
@@ -151,6 +154,44 @@ SET
     deleted_at = NOW(),
     updated_at = NOW()
 WHERE id = $1 AND tenant_id = $2;
+
+-- name: UpdateUserRole :one
+UPDATE users 
+SET 
+    role_id = $2,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: UpdateUserPermissionsOverride :one
+UPDATE users 
+SET 
+    permissions_override = $2,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: ClearUserPermissionsOverride :one
+UPDATE users 
+SET 
+    permissions_override = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: GetUserWithRoleAndPermissions :one
+SELECT 
+    u.*,
+    r.name as role_name,
+    r.permissions as role_permissions,
+    COALESCE(u.permissions_override, r.permissions) as effective_permissions,
+    CASE 
+        WHEN u.permissions_override IS NOT NULL THEN TRUE 
+        ELSE FALSE 
+    END as has_permissions_override
+FROM users u
+LEFT JOIN roles r ON u.role_id = r.id
+WHERE u.id = $1 AND u.tenant_id = $2 AND u.deleted_at IS NULL;
 
 -- name: ListUsers :many
 SELECT * FROM users 
@@ -234,8 +275,8 @@ WHERE user_type = $1 AND deleted_at IS NULL;
 -- ============ USER PROFILE QUERIES ============
 
 -- name: CreateUserProfile :one
-INSERT INTO user_profiles (user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions) 
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO user_profiles (user_id, tenant_id, full_name, phone, avatar_url, timezone) 
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetUserProfile :one
@@ -253,7 +294,6 @@ SET
     phone = $3,
     avatar_url = $4,
     timezone = $5,
-    permissions = $6,
     updated_at = NOW()
 WHERE user_id = $1
 RETURNING *;
@@ -265,9 +305,8 @@ SET
     phone = $3,
     avatar_url = $4,
     timezone = $5,
-    permissions = $6,
     updated_at = NOW()
-WHERE user_id = $1 AND tenant_id = $7
+WHERE user_id = $1 AND tenant_id = $6
 RETURNING *;
 
 -- name: DeleteUserProfile :exec
@@ -348,8 +387,8 @@ WHERE expires_at < NOW();
 -- ============ ROLE QUERIES ============
 
 -- name: CreateRole :one
-INSERT INTO roles (tenant_id, name, description, permission_template, is_default) 
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO roles (tenant_id, name, description, permissions) 
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetRoleByID :one
@@ -365,10 +404,9 @@ UPDATE roles
 SET 
     name = $2,
     description = $3,
-    permission_template = $4,
-    is_default = $5,
+    permissions = $4,
     updated_at = NOW()
-WHERE id = $1 AND tenant_id = $6
+WHERE id = $1 AND tenant_id = $5
 RETURNING *;
 
 -- name: DeleteRole :exec
@@ -390,6 +428,11 @@ SELECT COUNT(*)
 FROM roles 
 WHERE tenant_id = $1;
 
+-- name: CountUsersByRole :one
+SELECT COUNT(*) 
+FROM users 
+WHERE role_id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
+
 -- ============ JOIN QUERIES ============
 
 -- name: GetUserWithProfile :one
@@ -399,9 +442,12 @@ SELECT
     p.phone,
     p.avatar_url,
     p.timezone,
-    p.permissions
+    r.name as role_name,
+    r.permissions as role_permissions,
+    COALESCE(u.permissions_override, r.permissions) as effective_permissions
 FROM users u
 LEFT JOIN user_profiles p ON u.id = p.user_id
+LEFT JOIN roles r ON u.role_id = r.id
 WHERE u.id = $1 AND u.deleted_at IS NULL;
 
 -- name: GetUserWithTenant :one
@@ -443,16 +489,17 @@ GROUP BY t.id;
 
 -- name: ListUsersWithFilters :many
 SELECT 
-    u.*,
-    e.id as employee_id,
+    u.id,
+    u.username,
+    u.email,
+    u.user_type,
+    u.role_id,
     e.first_name,
     e.last_name,
-    d.name as department_name,
-    p.title as position_title
+    r.name as role_name
 FROM users u
 LEFT JOIN employees e ON u.id = e.user_id
-LEFT JOIN departments d ON e.department_id = d.id
-LEFT JOIN positions p ON e.position_id = p.id
+LEFT JOIN roles r ON u.role_id = r.id
 WHERE 
     u.tenant_id = @tenant_id
 AND 
@@ -483,3 +530,53 @@ AND
      OR @search::text = '')
 AND
     (u.user_type = @user_type OR @user_type = '');
+
+-- name: GetUsersWithRoleAndOverrideStatus :many
+SELECT 
+    u.id,
+    u.username,
+    u.email,
+    u.user_type,
+    u.role_id,
+    u.permissions_override,
+    r.name as role_name,
+    r.permissions as role_permissions,
+    CASE 
+        WHEN u.permissions_override IS NOT NULL THEN TRUE 
+        ELSE FALSE 
+    END as has_override
+FROM users u
+JOIN roles r ON u.role_id = r.id
+WHERE u.role_id = $1 
+  AND u.tenant_id = $2
+  AND u.deleted_at IS NULL
+ORDER BY 
+    CASE WHEN u.permissions_override IS NOT NULL THEN 0 ELSE 1 END,
+    u.username;
+
+-- name: GetUsersWithOverridesForRole :many
+SELECT 
+    u.id,
+    u.username,
+    u.email,
+    u.permissions_override,
+    r.permissions as role_permissions
+FROM users u
+JOIN roles r ON u.role_id = r.id
+WHERE u.role_id = $1 
+  AND u.tenant_id = $2
+  AND u.permissions_override IS NOT NULL
+  AND u.deleted_at IS NULL;
+
+-- name: CountUsersWithOverridesForRole :one
+SELECT COUNT(*)
+FROM users
+WHERE role_id = $1 
+  AND tenant_id = $2
+  AND permissions_override IS NOT NULL
+  AND deleted_at IS NULL;
+
+-- name: ClearOverridesForRole :exec
+UPDATE users 
+SET permissions_override = NULL, updated_at = NOW()
+WHERE role_id = $1 AND tenant_id = $2 AND deleted_at IS NULL;

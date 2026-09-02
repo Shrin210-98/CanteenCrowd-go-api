@@ -23,6 +23,7 @@ func NewHandler(querier database.Querier, jwtSecret string, pool *pgxpool.Pool) 
 		jwtSecret: jwtSecret,
 		// Conn:      conn,   conn *pgx.Conn
 		Pool:      pool,
-		Employees: employees.NewHandler(querier),
+		Employees: employees.NewHandler(querier, pool),
+		Users:     users.NewHandler(querier, pool),
 	}
 }

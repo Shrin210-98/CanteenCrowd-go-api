@@ -9,6 +9,24 @@ CREATE TABLE tenants (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Roles table - tenant-specific
+CREATE TABLE roles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT fk_roles_tenant FOREIGN KEY (tenant_id) 
+        REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT unique_role_per_tenant UNIQUE (tenant_id, name)
+);
+
+CREATE INDEX idx_roles_tenant ON roles(tenant_id);
+
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL,  -- Now NOT NULL for all users
@@ -32,6 +50,8 @@ CREATE TABLE users (
             'guest'             -- external temporary access for contractors, clients etc.
         )
     ),
+    role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
+    permissions_override JSONB,
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -46,6 +66,7 @@ CREATE TABLE users (
 CREATE INDEX idx_users_tenant_id ON users(tenant_id);
 CREATE INDEX idx_users_tenant_type ON users(tenant_id, user_type);
 CREATE INDEX idx_users_email ON users(email) WHERE deleted_at IS NULL;
+CREATE INDEX idx_users_role_id ON users(role_id) WHERE deleted_at IS NULL;
 
 -- User profiles table
 CREATE TABLE user_profiles (
@@ -56,31 +77,6 @@ CREATE TABLE user_profiles (
     phone TEXT,
     avatar_url TEXT,
     timezone TEXT,
-    permissions JSONB NOT NULL DEFAULT '[
-            { "label": "Dashboard", "name": "dashboard", "enabled": true },
-            {
-            "label": "Employees",
-            "name": "employees",
-            "enabled": true,
-            "nested": [
-                { "label": "View Details", "name": "view", "enabled": true },
-                { "label": "Add Employee", "name": "add", "enabled": true },
-                { "label": "Edit Employee", "name": "edit", "enabled": true },
-                { "label": "Delete Employee", "name": "delete", "enabled": true },
-                { "label": "Departments", "name": "departments", "enabled": true }
-            ]
-            },
-            {
-            "label": "CC Specials",
-            "name": "cc-specials",
-            "enabled": true,
-            "nested": [
-                { "label": "View List", "name": "index", "enabled": true },
-                { "label": "Add Menu", "name": "add", "enabled": true },
-                { "label": "Category Template", "name": "category-template", "enabled": true }
-            ]
-            }
-        ]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
@@ -122,24 +118,6 @@ CREATE TABLE refresh_tokens (
 );
 
 CREATE INDEX idx_refresh_tokens_tenant ON refresh_tokens(tenant_id);
-
--- Roles table - tenant-specific
-CREATE TABLE roles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    permission_template JSONB NOT NULL DEFAULT '[]'::jsonb,
-    is_default BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
-    CONSTRAINT fk_roles_tenant FOREIGN KEY (tenant_id) 
-        REFERENCES tenants(id) ON DELETE CASCADE,
-    CONSTRAINT unique_role_per_tenant UNIQUE (tenant_id, name)
-);
-
-CREATE INDEX idx_roles_tenant ON roles(tenant_id);
 
 -- Create triggers for updated_at
 CREATE TRIGGER update_tenants_updated_at

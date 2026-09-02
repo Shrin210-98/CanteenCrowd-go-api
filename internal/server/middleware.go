@@ -65,7 +65,7 @@ func RequireAuthMiddleware(next http.Handler) http.HandlerFunc {
 			return
 		}
 
-		userID, tenantID, err := utils.ValidateToken(token, jwtSecret)
+		userID, tenantID, userType, err := utils.ValidateToken(token, jwtSecret)
 		if err != nil {
 			utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Invalid token"})
 			return
@@ -73,6 +73,7 @@ func RequireAuthMiddleware(next http.Handler) http.HandlerFunc {
 
 		ctx := context.WithValue(r.Context(), constants.ContextKeyUserID, userID)
 		ctx = context.WithValue(ctx, constants.ContextKeyTenantID, tenantID)
+		ctx = context.WithValue(ctx, constants.ContextKeyUserType, userType)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

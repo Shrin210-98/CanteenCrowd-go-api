@@ -7,7 +7,7 @@ import (
 )
 
 // JsonResponse sends a JSON response with the given status code and data
-func JsonResponse(w http.ResponseWriter, statusCode int, data map[string]any) {
+func JsonResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
