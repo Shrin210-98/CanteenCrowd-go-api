@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Run this once on your EC2 instance after creation
+# Run this ONCE on your EC2 instance after creation
 set -e
 
 echo "🚀 Setting up EC2..."
@@ -18,12 +18,13 @@ if ! command -v docker &> /dev/null; then
     sudo systemctl enable docker
 fi
 
-# Install Docker Compose
-if ! command -v docker compose &> /dev/null; then
-    echo "🔄 Installing Docker Compose..."
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-    sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+# Install Docker Compose plugin (modern way)
+if ! docker compose version &> /dev/null; then
+    echo "🔄 Installing Docker Compose plugin..."
+    sudo mkdir -p /usr/local/lib/docker/cli-plugins
+    sudo curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose
+    sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 fi
 
 # Install Git
@@ -38,9 +39,9 @@ sudo usermod -aG docker $USER
 # Create app directory
 mkdir -p /home/$USER/app
 
-# Setup swap (important for t2.micro)
+# Setup swap (important for --build on small instances)
 if [ ! -f /swapfile ]; then
-    echo "💾 Setting up swap..."
+    echo "💾 Setting up 2GB swap..."
     sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
     sudo chmod 600 /swapfile
     sudo mkswap /swapfile
@@ -48,5 +49,6 @@ if [ ! -f /swapfile ]; then
     echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 fi
 
-echo "✅ Setup complete! Now add GitHub secrets and push to main."
-
+echo "✅ Setup complete!"
+echo "⚠️  Run 'exit' and SSH back in for docker group permissions to take effect"
+echo "🚀 Then push to main to trigger your first deployment!"
