@@ -59,6 +59,8 @@ jobs:
             echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
             echo "GIN_MODE=release" >> .env
             echo "DB_SSLMODE=require" >> .env
+            echo "DB_SCHEMA=public" >> .env
+
 
 
             echo "🐳 Building and deploying containers..."
