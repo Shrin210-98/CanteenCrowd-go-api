@@ -1,0 +1,85 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ec2-user/app
+
+            # Create scripts directory if not exists
+            mkdir -p scripts
+
+            # Pull latest code
+            if [ -d ".git" ]; then
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/Shrin210-98/CanteenCrowd-go-api.git
+              #For private repo: git clone https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
+            fi
+
+            # Make scripts executable
+            chmod +x scripts/*.sh 2>/dev/null || true
+
+            # Create .env file
+            cat > .env << 'ENVEOF'
+            DB_DATABASE=${{ secrets.DB_DATABASE }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_HOST=${{ secrets.DB_HOST }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            GIN_MODE=release
+            ENVEOF
+
+            # Deploy
+            docker compose -f docker-compose.prod.yml up -d --build
+            # docker compose -f docker-compose.prod.yml pull
+            # docker compose -f docker-compose.prod.yml up -d
+
+            # Clean up
+            docker image prune -f
+
+            # Check status
+            sleep 10
+            if docker compose -f docker-compose.prod.yml ps | grep -q "unhealthy\|exited"; then
+              echo "❌ Deployment failed!"
+              docker compose -f docker-compose.prod.yml logs --tail=50
+              exit 1
+            fi
+
+            echo "✅ Deployment successful!"
+            docker compose -f docker-compose.prod.yml ps
+
+            EC2_HOST=your-ec2-public-ip
+
