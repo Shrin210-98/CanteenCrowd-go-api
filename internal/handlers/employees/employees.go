@@ -13,16 +13,20 @@ import (
 	"ccms.com/api/internal/utils"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
-	db database.Querier
+	db   database.Querier
+	pool *pgxpool.Pool
 }
 
-func NewHandler(querier database.Querier) *Handler {
-	return &Handler{db: querier}
+func NewHandler(db database.Querier, pool *pgxpool.Pool) *Handler {
+	return &Handler{
+		db:   db,
+		pool: pool,
+	}
 }
-
 func getTenantID(r *http.Request) (uuid.UUID, bool) {
 	tenantID, ok := r.Context().Value(constants.ContextKeyTenantID).(uuid.UUID)
 	return tenantID, ok
@@ -53,6 +57,11 @@ func (h *Handler) ListEmployees(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := getTenantID(r)
 	if !ok {
 		utils.JsonResponse(w, http.StatusUnauthorized, map[string]any{"message": "Unauthorized"})
+		return
+	}
+
+	if r.URL.Query().Get("eligibleForUser") == "true" {
+		h.ListEligibleEmployeesForDropdown(w, r, tenantID)
 		return
 	}
 
@@ -337,4 +346,34 @@ func (h *Handler) SearchEmployees(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.JsonResponse(w, http.StatusOK, response)
+}
+
+func (h *Handler) ListEligibleEmployeesForDropdown(w http.ResponseWriter, r *http.Request, tenantID uuid.UUID) {
+	// Get eligible employees from database
+	employees, err := h.db.ListEmployeesEligibleForUserCreation(r.Context(), tenantID)
+	if err != nil {
+		utils.HandleDBError(w, err, "ListEmployeesEligibleForUserCreation")
+		return
+	}
+
+	// Simplified response for dropdown - only id and name
+	type EmployeeDropdownOption struct {
+		ID   uuid.UUID `json:"id"`
+		Name string    `json:"name"`
+	}
+
+	options := make([]EmployeeDropdownOption, 0, len(employees))
+	for _, emp := range employees {
+		options = append(options, EmployeeDropdownOption{
+			ID:   emp.ID,
+			Name: emp.FirstName + " " + emp.LastName,
+		})
+	}
+
+	// Ensure empty array instead of null
+	if options == nil {
+		options = []EmployeeDropdownOption{}
+	}
+
+	utils.JsonResponse(w, http.StatusOK, options)
 }

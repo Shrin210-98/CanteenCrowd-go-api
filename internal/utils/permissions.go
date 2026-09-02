@@ -6,10 +6,11 @@ import (
 
 // PermissionNode represents the full permission structure from database
 type PermissionNode struct {
-	Name    string           `json:"name"`
-	Label   string           `json:"label"`
-	Enabled bool             `json:"enabled"`
-	Nested  []PermissionNode `json:"nested,omitempty"`
+	Name               string           `json:"name"`
+	Label              string           `json:"label"`
+	Enabled            bool             `json:"enabled"`
+	Nested             []PermissionNode `json:"nested,omitempty"`
+	RequiredSelections []string         `json:"requiredSelections,omitempty"`
 }
 
 // FilteredPermission represents the response structure (no enabled field)
@@ -17,6 +18,24 @@ type FilteredPermission struct {
 	Name   string               `json:"name"`
 	Label  string               `json:"label"`
 	Nested []FilteredPermission `json:"nested,omitempty"`
+}
+
+// ToJSON converts permissions to JSON for database storage
+func ToJSON(permissions []PermissionNode) (json.RawMessage, error) {
+	data, err := json.Marshal(permissions)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(data), nil
+}
+
+// MustToJSON converts permissions to JSON, panics on error (use for defaults)
+func MustToJSON(permissions []PermissionNode) json.RawMessage {
+	data, err := json.Marshal(permissions)
+	if err != nil {
+		panic(err)
+	}
+	return json.RawMessage(data)
 }
 
 // FilterEnabledPermissions returns only enabled permissions without the enabled field

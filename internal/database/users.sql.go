@@ -90,6 +90,22 @@ func (q *Queries) CheckUsernameExistsInTenant(ctx context.Context, arg CheckUser
 	return exists, err
 }
 
+const clearOverridesForRole = `-- name: ClearOverridesForRole :exec
+UPDATE users 
+SET permissions_override = NULL, updated_at = NOW()
+WHERE role_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type ClearOverridesForRoleParams struct {
+	RoleID   *uuid.UUID `json:"roleId"`
+	TenantID uuid.UUID  `json:"tenantId"`
+}
+
+func (q *Queries) ClearOverridesForRole(ctx context.Context, arg ClearOverridesForRoleParams) error {
+	_, err := q.db.Exec(ctx, clearOverridesForRole, arg.RoleID, arg.TenantID)
+	return err
+}
+
 const clearPasswordResetToken = `-- name: ClearPasswordResetToken :one
 UPDATE users 
 SET 
@@ -97,7 +113,7 @@ SET
     token_expiry = NULL,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 func (q *Queries) ClearPasswordResetToken(ctx context.Context, id uuid.UUID) (User, error) {
@@ -120,6 +136,51 @@ func (q *Queries) ClearPasswordResetToken(ctx context.Context, id uuid.UUID) (Us
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const clearUserPermissionsOverride = `-- name: ClearUserPermissionsOverride :one
+UPDATE users 
+SET 
+    permissions_override = NULL,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
+`
+
+type ClearUserPermissionsOverrideParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) ClearUserPermissionsOverride(ctx context.Context, arg ClearUserPermissionsOverrideParams) (User, error) {
+	row := q.db.QueryRow(ctx, clearUserPermissionsOverride, arg.ID, arg.TenantID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -174,6 +235,24 @@ SELECT COUNT(*) FROM tenants WHERE status = 'active'
 
 func (q *Queries) CountTenants(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countTenants)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUsersByRole = `-- name: CountUsersByRole :one
+SELECT COUNT(*) 
+FROM users 
+WHERE role_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type CountUsersByRoleParams struct {
+	RoleID   *uuid.UUID `json:"roleId"`
+	TenantID uuid.UUID  `json:"tenantId"`
+}
+
+func (q *Queries) CountUsersByRole(ctx context.Context, arg CountUsersByRoleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsersByRole, arg.RoleID, arg.TenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -235,6 +314,27 @@ func (q *Queries) CountUsersWithFilters(ctx context.Context, arg CountUsersWithF
 	return count, err
 }
 
+const countUsersWithOverridesForRole = `-- name: CountUsersWithOverridesForRole :one
+SELECT COUNT(*)
+FROM users
+WHERE role_id = $1 
+  AND tenant_id = $2
+  AND permissions_override IS NOT NULL
+  AND deleted_at IS NULL
+`
+
+type CountUsersWithOverridesForRoleParams struct {
+	RoleID   *uuid.UUID `json:"roleId"`
+	TenantID uuid.UUID  `json:"tenantId"`
+}
+
+func (q *Queries) CountUsersWithOverridesForRole(ctx context.Context, arg CountUsersWithOverridesForRoleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsersWithOverridesForRole, arg.RoleID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createRefreshToken = `-- name: CreateRefreshToken :one
 
 INSERT INTO refresh_tokens (user_id, tenant_id, token, expires_at) 
@@ -271,17 +371,16 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 
 const createRole = `-- name: CreateRole :one
 
-INSERT INTO roles (tenant_id, name, description, permission_template, is_default) 
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, name, description, permission_template, is_default, created_at, updated_at
+INSERT INTO roles (tenant_id, name, description, permissions) 
+VALUES ($1, $2, $3, $4)
+RETURNING id, tenant_id, name, description, permissions, is_default, created_at, updated_at
 `
 
 type CreateRoleParams struct {
-	TenantID           uuid.UUID       `json:"tenantId"`
-	Name               string          `json:"name"`
-	Description        *string         `json:"description"`
-	PermissionTemplate json.RawMessage `json:"permissionTemplate"`
-	IsDefault          bool            `json:"isDefault"`
+	TenantID    uuid.UUID       `json:"tenantId"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Permissions json.RawMessage `json:"permissions"`
 }
 
 // ============ ROLE QUERIES ============
@@ -290,8 +389,7 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, e
 		arg.TenantID,
 		arg.Name,
 		arg.Description,
-		arg.PermissionTemplate,
-		arg.IsDefault,
+		arg.Permissions,
 	)
 	var i Role
 	err := row.Scan(
@@ -299,7 +397,7 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, e
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.PermissionTemplate,
+		&i.Permissions,
 		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -347,17 +445,19 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 
 const createUser = `-- name: CreateUser :one
 
-INSERT INTO users (tenant_id, username, email, password_hash, user_type) 
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+INSERT INTO users (tenant_id, username, email, password_hash, user_type, role_id, permissions_override) 
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	TenantID     uuid.UUID `json:"tenantId"`
-	Username     string    `json:"username"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"passwordHash"`
-	UserType     string    `json:"userType"`
+	TenantID            uuid.UUID        `json:"tenantId"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	PasswordHash        string           `json:"passwordHash"`
+	UserType            string           `json:"userType"`
+	RoleID              *uuid.UUID       `json:"roleId"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
 }
 
 // ============ USER QUERIES ============
@@ -368,6 +468,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Email,
 		arg.PasswordHash,
 		arg.UserType,
+		arg.RoleID,
+		arg.PermissionsOverride,
 	)
 	var i User
 	err := row.Scan(
@@ -387,6 +489,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -396,19 +500,18 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 
 const createUserProfile = `-- name: CreateUserProfile :one
 
-INSERT INTO user_profiles (user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions) 
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at
+INSERT INTO user_profiles (user_id, tenant_id, full_name, phone, avatar_url, timezone) 
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, created_at, updated_at
 `
 
 type CreateUserProfileParams struct {
-	UserID      uuid.UUID       `json:"userId"`
-	TenantID    uuid.UUID       `json:"tenantId"`
-	FullName    *string         `json:"fullName"`
-	Phone       *string         `json:"phone"`
-	AvatarUrl   *string         `json:"avatarUrl"`
-	Timezone    *string         `json:"timezone"`
-	Permissions json.RawMessage `json:"permissions"`
+	UserID    uuid.UUID `json:"userId"`
+	TenantID  uuid.UUID `json:"tenantId"`
+	FullName  *string   `json:"fullName"`
+	Phone     *string   `json:"phone"`
+	AvatarUrl *string   `json:"avatarUrl"`
+	Timezone  *string   `json:"timezone"`
 }
 
 // ============ USER PROFILE QUERIES ============
@@ -420,7 +523,6 @@ func (q *Queries) CreateUserProfile(ctx context.Context, arg CreateUserProfilePa
 		arg.Phone,
 		arg.AvatarUrl,
 		arg.Timezone,
-		arg.Permissions,
 	)
 	var i UserProfile
 	err := row.Scan(
@@ -431,7 +533,6 @@ func (q *Queries) CreateUserProfile(ctx context.Context, arg CreateUserProfilePa
 		&i.Phone,
 		&i.AvatarUrl,
 		&i.Timezone,
-		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -596,7 +697,7 @@ func (q *Queries) GetRefreshToken(ctx context.Context, token string) (RefreshTok
 }
 
 const getRoleByID = `-- name: GetRoleByID :one
-SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+SELECT id, tenant_id, name, description, permissions, is_default, created_at, updated_at FROM roles 
 WHERE id = $1
 `
 
@@ -608,7 +709,7 @@ func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error) {
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.PermissionTemplate,
+		&i.Permissions,
 		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -617,7 +718,7 @@ func (q *Queries) GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error) {
 }
 
 const getRoleByTenantAndName = `-- name: GetRoleByTenantAndName :one
-SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+SELECT id, tenant_id, name, description, permissions, is_default, created_at, updated_at FROM roles 
 WHERE tenant_id = $1 AND name = $2
 `
 
@@ -634,7 +735,7 @@ func (q *Queries) GetRoleByTenantAndName(ctx context.Context, arg GetRoleByTenan
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.PermissionTemplate,
+		&i.Permissions,
 		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -643,7 +744,7 @@ func (q *Queries) GetRoleByTenantAndName(ctx context.Context, arg GetRoleByTenan
 }
 
 const getStaffUsersByTenant = `-- name: GetStaffUsersByTenant :many
-SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at 
+SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at 
 FROM users u
 WHERE u.tenant_id = $1 
   AND u.user_type IN ('staff', 'guest')
@@ -677,6 +778,8 @@ func (q *Queries) GetStaffUsersByTenant(ctx context.Context, tenantID uuid.UUID)
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -821,7 +924,7 @@ func (q *Queries) GetTenantWithStats(ctx context.Context, id uuid.UUID) (GetTena
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE email = $1 AND deleted_at IS NULL
 `
 
@@ -845,6 +948,8 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -853,7 +958,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -877,6 +982,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -885,7 +992,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 }
 
 const getUserByResetToken = `-- name: GetUserByResetToken :one
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE password_reset_token = $1 AND deleted_at IS NULL
 `
 
@@ -909,6 +1016,8 @@ func (q *Queries) GetUserByResetToken(ctx context.Context, passwordResetToken *s
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -917,7 +1026,7 @@ func (q *Queries) GetUserByResetToken(ctx context.Context, passwordResetToken *s
 }
 
 const getUserByTenantAndID = `-- name: GetUserByTenantAndID :one
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
@@ -946,6 +1055,8 @@ func (q *Queries) GetUserByTenantAndID(ctx context.Context, arg GetUserByTenantA
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -954,7 +1065,7 @@ func (q *Queries) GetUserByTenantAndID(ctx context.Context, arg GetUserByTenantA
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE username = $1 AND deleted_at IS NULL
 `
 
@@ -978,6 +1089,8 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -986,7 +1099,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 }
 
 const getUserProfile = `-- name: GetUserProfile :one
-SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at FROM user_profiles 
+SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, created_at, updated_at FROM user_profiles 
 WHERE user_id = $1
 `
 
@@ -1001,7 +1114,6 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID uuid.UUID) (UserPro
 		&i.Phone,
 		&i.AvatarUrl,
 		&i.Timezone,
-		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1009,7 +1121,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID uuid.UUID) (UserPro
 }
 
 const getUserProfileByTenant = `-- name: GetUserProfileByTenant :one
-SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at FROM user_profiles 
+SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, created_at, updated_at FROM user_profiles 
 WHERE user_id = $1 AND tenant_id = $2
 `
 
@@ -1029,7 +1141,6 @@ func (q *Queries) GetUserProfileByTenant(ctx context.Context, arg GetUserProfile
 		&i.Phone,
 		&i.AvatarUrl,
 		&i.Timezone,
-		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1088,42 +1199,49 @@ func (q *Queries) GetUserTokenByType(ctx context.Context, arg GetUserTokenByType
 const getUserWithProfile = `-- name: GetUserWithProfile :one
 
 SELECT 
-    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at,
     p.full_name,
     p.phone,
     p.avatar_url,
     p.timezone,
-    p.permissions
+    r.name as role_name,
+    r.permissions as role_permissions,
+    COALESCE(u.permissions_override, r.permissions) as effective_permissions
 FROM users u
 LEFT JOIN user_profiles p ON u.id = p.user_id
+LEFT JOIN roles r ON u.role_id = r.id
 WHERE u.id = $1 AND u.deleted_at IS NULL
 `
 
 type GetUserWithProfileRow struct {
-	ID                 uuid.UUID        `json:"id"`
-	TenantID           uuid.UUID        `json:"tenantId"`
-	Username           string           `json:"username"`
-	Email              string           `json:"email"`
-	PasswordHash       string           `json:"passwordHash"`
-	LastLogin          *time.Time       `json:"lastLogin"`
-	LoginAttempts      int32            `json:"loginAttempts"`
-	IsLocked           bool             `json:"isLocked"`
-	LockedUntil        *time.Time       `json:"lockedUntil"`
-	PasswordResetToken *string          `json:"passwordResetToken"`
-	TokenExpiry        *time.Time       `json:"tokenExpiry"`
-	MustChangePassword bool             `json:"mustChangePassword"`
-	EmailVerified      bool             `json:"emailVerified"`
-	MfaEnabled         bool             `json:"mfaEnabled"`
-	LastPasswordChange *time.Time       `json:"lastPasswordChange"`
-	UserType           string           `json:"userType"`
-	DeletedAt          *time.Time       `json:"deletedAt"`
-	CreatedAt          time.Time        `json:"createdAt"`
-	UpdatedAt          time.Time        `json:"updatedAt"`
-	FullName           *string          `json:"fullName"`
-	Phone              *string          `json:"phone"`
-	AvatarUrl          *string          `json:"avatarUrl"`
-	Timezone           *string          `json:"timezone"`
-	Permissions        *json.RawMessage `json:"permissions"`
+	ID                   uuid.UUID        `json:"id"`
+	TenantID             uuid.UUID        `json:"tenantId"`
+	Username             string           `json:"username"`
+	Email                string           `json:"email"`
+	PasswordHash         string           `json:"passwordHash"`
+	LastLogin            *time.Time       `json:"lastLogin"`
+	LoginAttempts        int32            `json:"loginAttempts"`
+	IsLocked             bool             `json:"isLocked"`
+	LockedUntil          *time.Time       `json:"lockedUntil"`
+	PasswordResetToken   *string          `json:"passwordResetToken"`
+	TokenExpiry          *time.Time       `json:"tokenExpiry"`
+	MustChangePassword   bool             `json:"mustChangePassword"`
+	EmailVerified        bool             `json:"emailVerified"`
+	MfaEnabled           bool             `json:"mfaEnabled"`
+	LastPasswordChange   *time.Time       `json:"lastPasswordChange"`
+	UserType             string           `json:"userType"`
+	RoleID               *uuid.UUID       `json:"roleId"`
+	PermissionsOverride  *json.RawMessage `json:"permissionsOverride"`
+	DeletedAt            *time.Time       `json:"deletedAt"`
+	CreatedAt            time.Time        `json:"createdAt"`
+	UpdatedAt            time.Time        `json:"updatedAt"`
+	FullName             *string          `json:"fullName"`
+	Phone                *string          `json:"phone"`
+	AvatarUrl            *string          `json:"avatarUrl"`
+	Timezone             *string          `json:"timezone"`
+	RoleName             *string          `json:"roleName"`
+	RolePermissions      *json.RawMessage `json:"rolePermissions"`
+	EffectivePermissions json.RawMessage  `json:"effectivePermissions"`
 }
 
 // ============ JOIN QUERIES ============
@@ -1147,6 +1265,8 @@ func (q *Queries) GetUserWithProfile(ctx context.Context, id uuid.UUID) (GetUser
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1154,14 +1274,97 @@ func (q *Queries) GetUserWithProfile(ctx context.Context, id uuid.UUID) (GetUser
 		&i.Phone,
 		&i.AvatarUrl,
 		&i.Timezone,
-		&i.Permissions,
+		&i.RoleName,
+		&i.RolePermissions,
+		&i.EffectivePermissions,
+	)
+	return i, err
+}
+
+const getUserWithRoleAndPermissions = `-- name: GetUserWithRoleAndPermissions :one
+SELECT 
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at,
+    r.name as role_name,
+    r.permissions as role_permissions,
+    COALESCE(u.permissions_override, r.permissions) as effective_permissions,
+    CASE 
+        WHEN u.permissions_override IS NOT NULL THEN TRUE 
+        ELSE FALSE 
+    END as has_permissions_override
+FROM users u
+LEFT JOIN roles r ON u.role_id = r.id
+WHERE u.id = $1 AND u.tenant_id = $2 AND u.deleted_at IS NULL
+`
+
+type GetUserWithRoleAndPermissionsParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+type GetUserWithRoleAndPermissionsRow struct {
+	ID                     uuid.UUID        `json:"id"`
+	TenantID               uuid.UUID        `json:"tenantId"`
+	Username               string           `json:"username"`
+	Email                  string           `json:"email"`
+	PasswordHash           string           `json:"passwordHash"`
+	LastLogin              *time.Time       `json:"lastLogin"`
+	LoginAttempts          int32            `json:"loginAttempts"`
+	IsLocked               bool             `json:"isLocked"`
+	LockedUntil            *time.Time       `json:"lockedUntil"`
+	PasswordResetToken     *string          `json:"passwordResetToken"`
+	TokenExpiry            *time.Time       `json:"tokenExpiry"`
+	MustChangePassword     bool             `json:"mustChangePassword"`
+	EmailVerified          bool             `json:"emailVerified"`
+	MfaEnabled             bool             `json:"mfaEnabled"`
+	LastPasswordChange     *time.Time       `json:"lastPasswordChange"`
+	UserType               string           `json:"userType"`
+	RoleID                 *uuid.UUID       `json:"roleId"`
+	PermissionsOverride    *json.RawMessage `json:"permissionsOverride"`
+	DeletedAt              *time.Time       `json:"deletedAt"`
+	CreatedAt              time.Time        `json:"createdAt"`
+	UpdatedAt              time.Time        `json:"updatedAt"`
+	RoleName               *string          `json:"roleName"`
+	RolePermissions        *json.RawMessage `json:"rolePermissions"`
+	EffectivePermissions   json.RawMessage  `json:"effectivePermissions"`
+	HasPermissionsOverride bool             `json:"hasPermissionsOverride"`
+}
+
+func (q *Queries) GetUserWithRoleAndPermissions(ctx context.Context, arg GetUserWithRoleAndPermissionsParams) (GetUserWithRoleAndPermissionsRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithRoleAndPermissions, arg.ID, arg.TenantID)
+	var i GetUserWithRoleAndPermissionsRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RoleName,
+		&i.RolePermissions,
+		&i.EffectivePermissions,
+		&i.HasPermissionsOverride,
 	)
 	return i, err
 }
 
 const getUserWithTenant = `-- name: GetUserWithTenant :one
 SELECT 
-    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at,
     t.name as tenant_name,
     t.slug as tenant_slug,
     t.plan as tenant_plan,
@@ -1172,29 +1375,31 @@ WHERE u.id = $1 AND u.deleted_at IS NULL
 `
 
 type GetUserWithTenantRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	TenantID           uuid.UUID  `json:"tenantId"`
-	Username           string     `json:"username"`
-	Email              string     `json:"email"`
-	PasswordHash       string     `json:"passwordHash"`
-	LastLogin          *time.Time `json:"lastLogin"`
-	LoginAttempts      int32      `json:"loginAttempts"`
-	IsLocked           bool       `json:"isLocked"`
-	LockedUntil        *time.Time `json:"lockedUntil"`
-	PasswordResetToken *string    `json:"passwordResetToken"`
-	TokenExpiry        *time.Time `json:"tokenExpiry"`
-	MustChangePassword bool       `json:"mustChangePassword"`
-	EmailVerified      bool       `json:"emailVerified"`
-	MfaEnabled         bool       `json:"mfaEnabled"`
-	LastPasswordChange *time.Time `json:"lastPasswordChange"`
-	UserType           string     `json:"userType"`
-	DeletedAt          *time.Time `json:"deletedAt"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	TenantName         string     `json:"tenantName"`
-	TenantSlug         string     `json:"tenantSlug"`
-	TenantPlan         string     `json:"tenantPlan"`
-	TenantStatus       string     `json:"tenantStatus"`
+	ID                  uuid.UUID        `json:"id"`
+	TenantID            uuid.UUID        `json:"tenantId"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	PasswordHash        string           `json:"passwordHash"`
+	LastLogin           *time.Time       `json:"lastLogin"`
+	LoginAttempts       int32            `json:"loginAttempts"`
+	IsLocked            bool             `json:"isLocked"`
+	LockedUntil         *time.Time       `json:"lockedUntil"`
+	PasswordResetToken  *string          `json:"passwordResetToken"`
+	TokenExpiry         *time.Time       `json:"tokenExpiry"`
+	MustChangePassword  bool             `json:"mustChangePassword"`
+	EmailVerified       bool             `json:"emailVerified"`
+	MfaEnabled          bool             `json:"mfaEnabled"`
+	LastPasswordChange  *time.Time       `json:"lastPasswordChange"`
+	UserType            string           `json:"userType"`
+	RoleID              *uuid.UUID       `json:"roleId"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
+	DeletedAt           *time.Time       `json:"deletedAt"`
+	CreatedAt           time.Time        `json:"createdAt"`
+	UpdatedAt           time.Time        `json:"updatedAt"`
+	TenantName          string           `json:"tenantName"`
+	TenantSlug          string           `json:"tenantSlug"`
+	TenantPlan          string           `json:"tenantPlan"`
+	TenantStatus        string           `json:"tenantStatus"`
 }
 
 func (q *Queries) GetUserWithTenant(ctx context.Context, id uuid.UUID) (GetUserWithTenantRow, error) {
@@ -1217,6 +1422,8 @@ func (q *Queries) GetUserWithTenant(ctx context.Context, id uuid.UUID) (GetUserW
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1229,7 +1436,7 @@ func (q *Queries) GetUserWithTenant(ctx context.Context, id uuid.UUID) (GetUserW
 }
 
 const getUsersByTenantID = `-- name: GetUsersByTenantID :many
-SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at 
+SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at 
 FROM users u
 WHERE u.tenant_id = $1 AND u.deleted_at IS NULL
 ORDER BY u.created_at DESC
@@ -1261,9 +1468,136 @@ func (q *Queries) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUsersWithOverridesForRole = `-- name: GetUsersWithOverridesForRole :many
+SELECT 
+    u.id,
+    u.username,
+    u.email,
+    u.permissions_override,
+    r.permissions as role_permissions
+FROM users u
+JOIN roles r ON u.role_id = r.id
+WHERE u.role_id = $1 
+  AND u.tenant_id = $2
+  AND u.permissions_override IS NOT NULL
+  AND u.deleted_at IS NULL
+`
+
+type GetUsersWithOverridesForRoleParams struct {
+	RoleID   *uuid.UUID `json:"roleId"`
+	TenantID uuid.UUID  `json:"tenantId"`
+}
+
+type GetUsersWithOverridesForRoleRow struct {
+	ID                  uuid.UUID        `json:"id"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
+	RolePermissions     json.RawMessage  `json:"rolePermissions"`
+}
+
+func (q *Queries) GetUsersWithOverridesForRole(ctx context.Context, arg GetUsersWithOverridesForRoleParams) ([]GetUsersWithOverridesForRoleRow, error) {
+	rows, err := q.db.Query(ctx, getUsersWithOverridesForRole, arg.RoleID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUsersWithOverridesForRoleRow{}
+	for rows.Next() {
+		var i GetUsersWithOverridesForRoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.PermissionsOverride,
+			&i.RolePermissions,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUsersWithRoleAndOverrideStatus = `-- name: GetUsersWithRoleAndOverrideStatus :many
+SELECT 
+    u.id,
+    u.username,
+    u.email,
+    u.user_type,
+    u.role_id,
+    u.permissions_override,
+    r.name as role_name,
+    r.permissions as role_permissions,
+    CASE 
+        WHEN u.permissions_override IS NOT NULL THEN TRUE 
+        ELSE FALSE 
+    END as has_override
+FROM users u
+JOIN roles r ON u.role_id = r.id
+WHERE u.role_id = $1 
+  AND u.tenant_id = $2
+  AND u.deleted_at IS NULL
+ORDER BY 
+    CASE WHEN u.permissions_override IS NOT NULL THEN 0 ELSE 1 END,
+    u.username
+`
+
+type GetUsersWithRoleAndOverrideStatusParams struct {
+	RoleID   *uuid.UUID `json:"roleId"`
+	TenantID uuid.UUID  `json:"tenantId"`
+}
+
+type GetUsersWithRoleAndOverrideStatusRow struct {
+	ID                  uuid.UUID        `json:"id"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	UserType            string           `json:"userType"`
+	RoleID              *uuid.UUID       `json:"roleId"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
+	RoleName            string           `json:"roleName"`
+	RolePermissions     json.RawMessage  `json:"rolePermissions"`
+	HasOverride         bool             `json:"hasOverride"`
+}
+
+func (q *Queries) GetUsersWithRoleAndOverrideStatus(ctx context.Context, arg GetUsersWithRoleAndOverrideStatusParams) ([]GetUsersWithRoleAndOverrideStatusRow, error) {
+	rows, err := q.db.Query(ctx, getUsersWithRoleAndOverrideStatus, arg.RoleID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUsersWithRoleAndOverrideStatusRow{}
+	for rows.Next() {
+		var i GetUsersWithRoleAndOverrideStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
+			&i.RoleName,
+			&i.RolePermissions,
+			&i.HasOverride,
 		); err != nil {
 			return nil, err
 		}
@@ -1309,7 +1643,7 @@ func (q *Queries) ListAllTenants(ctx context.Context) ([]Tenant, error) {
 }
 
 const listDefaultRolesByTenant = `-- name: ListDefaultRolesByTenant :many
-SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+SELECT id, tenant_id, name, description, permissions, is_default, created_at, updated_at FROM roles 
 WHERE tenant_id = $1 AND is_default = TRUE
 ORDER BY created_at DESC
 `
@@ -1328,7 +1662,7 @@ func (q *Queries) ListDefaultRolesByTenant(ctx context.Context, tenantID uuid.UU
 			&i.TenantID,
 			&i.Name,
 			&i.Description,
-			&i.PermissionTemplate,
+			&i.Permissions,
 			&i.IsDefault,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1344,7 +1678,7 @@ func (q *Queries) ListDefaultRolesByTenant(ctx context.Context, tenantID uuid.UU
 }
 
 const listRolesByTenant = `-- name: ListRolesByTenant :many
-SELECT id, tenant_id, name, description, permission_template, is_default, created_at, updated_at FROM roles 
+SELECT id, tenant_id, name, description, permissions, is_default, created_at, updated_at FROM roles 
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 `
@@ -1363,7 +1697,7 @@ func (q *Queries) ListRolesByTenant(ctx context.Context, tenantID uuid.UUID) ([]
 			&i.TenantID,
 			&i.Name,
 			&i.Description,
-			&i.PermissionTemplate,
+			&i.Permissions,
 			&i.IsDefault,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1447,7 +1781,7 @@ func (q *Queries) ListTenantsByPlan(ctx context.Context, plan string) ([]Tenant,
 }
 
 const listUserProfilesByTenant = `-- name: ListUserProfilesByTenant :many
-SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at FROM user_profiles 
+SELECT id, user_id, tenant_id, full_name, phone, avatar_url, timezone, created_at, updated_at FROM user_profiles 
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 `
@@ -1469,7 +1803,6 @@ func (q *Queries) ListUserProfilesByTenant(ctx context.Context, tenantID uuid.UU
 			&i.Phone,
 			&i.AvatarUrl,
 			&i.Timezone,
-			&i.Permissions,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1484,7 +1817,7 @@ func (q *Queries) ListUserProfilesByTenant(ctx context.Context, tenantID uuid.UU
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE deleted_at IS NULL 
 ORDER BY created_at DESC
 `
@@ -1515,6 +1848,8 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1530,7 +1865,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 }
 
 const listUsersByTenant = `-- name: ListUsersByTenant :many
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE tenant_id = $1 AND deleted_at IS NULL 
 ORDER BY created_at DESC
 `
@@ -1561,6 +1896,8 @@ func (q *Queries) ListUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1576,7 +1913,7 @@ func (q *Queries) ListUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]
 }
 
 const listUsersByTenantAndType = `-- name: ListUsersByTenantAndType :many
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE tenant_id = $1 AND user_type = $2 AND deleted_at IS NULL 
 ORDER BY created_at DESC
 `
@@ -1612,6 +1949,8 @@ func (q *Queries) ListUsersByTenantAndType(ctx context.Context, arg ListUsersByT
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1627,7 +1966,7 @@ func (q *Queries) ListUsersByTenantAndType(ctx context.Context, arg ListUsersByT
 }
 
 const listUsersByType = `-- name: ListUsersByType :many
-SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at FROM users 
+SELECT id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at FROM users 
 WHERE user_type = $1 AND deleted_at IS NULL 
 ORDER BY created_at DESC
 `
@@ -1658,6 +1997,8 @@ func (q *Queries) ListUsersByType(ctx context.Context, userType string) ([]User,
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1675,16 +2016,17 @@ func (q *Queries) ListUsersByType(ctx context.Context, userType string) ([]User,
 const listUsersWithFilters = `-- name: ListUsersWithFilters :many
 
 SELECT 
-    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
-    e.id as employee_id,
+    u.id,
+    u.username,
+    u.email,
+    u.user_type,
+    u.role_id,
     e.first_name,
     e.last_name,
-    d.name as department_name,
-    p.title as position_title
+    r.name as role_name
 FROM users u
 LEFT JOIN employees e ON u.id = e.user_id
-LEFT JOIN departments d ON e.department_id = d.id
-LEFT JOIN positions p ON e.position_id = p.id
+LEFT JOIN roles r ON u.role_id = r.id
 WHERE 
     u.tenant_id = $1
 AND 
@@ -1710,30 +2052,14 @@ type ListUsersWithFiltersParams struct {
 }
 
 type ListUsersWithFiltersRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	TenantID           uuid.UUID  `json:"tenantId"`
-	Username           string     `json:"username"`
-	Email              string     `json:"email"`
-	PasswordHash       string     `json:"passwordHash"`
-	LastLogin          *time.Time `json:"lastLogin"`
-	LoginAttempts      int32      `json:"loginAttempts"`
-	IsLocked           bool       `json:"isLocked"`
-	LockedUntil        *time.Time `json:"lockedUntil"`
-	PasswordResetToken *string    `json:"passwordResetToken"`
-	TokenExpiry        *time.Time `json:"tokenExpiry"`
-	MustChangePassword bool       `json:"mustChangePassword"`
-	EmailVerified      bool       `json:"emailVerified"`
-	MfaEnabled         bool       `json:"mfaEnabled"`
-	LastPasswordChange *time.Time `json:"lastPasswordChange"`
-	UserType           string     `json:"userType"`
-	DeletedAt          *time.Time `json:"deletedAt"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	EmployeeID         *uuid.UUID `json:"employeeId"`
-	FirstName          *string    `json:"firstName"`
-	LastName           *string    `json:"lastName"`
-	DepartmentName     *string    `json:"departmentName"`
-	PositionTitle      *string    `json:"positionTitle"`
+	ID        uuid.UUID  `json:"id"`
+	Username  string     `json:"username"`
+	Email     string     `json:"email"`
+	UserType  string     `json:"userType"`
+	RoleID    *uuid.UUID `json:"roleId"`
+	FirstName *string    `json:"firstName"`
+	LastName  *string    `json:"lastName"`
+	RoleName  *string    `json:"roleName"`
 }
 
 // ============ USER MANAGEMENT QUERIES ============
@@ -1754,29 +2080,13 @@ func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFil
 		var i ListUsersWithFiltersRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Username,
 			&i.Email,
-			&i.PasswordHash,
-			&i.LastLogin,
-			&i.LoginAttempts,
-			&i.IsLocked,
-			&i.LockedUntil,
-			&i.PasswordResetToken,
-			&i.TokenExpiry,
-			&i.MustChangePassword,
-			&i.EmailVerified,
-			&i.MfaEnabled,
-			&i.LastPasswordChange,
 			&i.UserType,
-			&i.DeletedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.EmployeeID,
+			&i.RoleID,
 			&i.FirstName,
 			&i.LastName,
-			&i.DepartmentName,
-			&i.PositionTitle,
+			&i.RoleName,
 		); err != nil {
 			return nil, err
 		}
@@ -1790,7 +2100,7 @@ func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFil
 
 const listUsersWithProfilesByTenant = `-- name: ListUsersWithProfilesByTenant :many
 SELECT 
-    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.deleted_at, u.created_at, u.updated_at,
+    u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at,
     p.full_name,
     p.phone,
     p.avatar_url,
@@ -1802,29 +2112,31 @@ ORDER BY u.created_at DESC
 `
 
 type ListUsersWithProfilesByTenantRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	TenantID           uuid.UUID  `json:"tenantId"`
-	Username           string     `json:"username"`
-	Email              string     `json:"email"`
-	PasswordHash       string     `json:"passwordHash"`
-	LastLogin          *time.Time `json:"lastLogin"`
-	LoginAttempts      int32      `json:"loginAttempts"`
-	IsLocked           bool       `json:"isLocked"`
-	LockedUntil        *time.Time `json:"lockedUntil"`
-	PasswordResetToken *string    `json:"passwordResetToken"`
-	TokenExpiry        *time.Time `json:"tokenExpiry"`
-	MustChangePassword bool       `json:"mustChangePassword"`
-	EmailVerified      bool       `json:"emailVerified"`
-	MfaEnabled         bool       `json:"mfaEnabled"`
-	LastPasswordChange *time.Time `json:"lastPasswordChange"`
-	UserType           string     `json:"userType"`
-	DeletedAt          *time.Time `json:"deletedAt"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	FullName           *string    `json:"fullName"`
-	Phone              *string    `json:"phone"`
-	AvatarUrl          *string    `json:"avatarUrl"`
-	Timezone           *string    `json:"timezone"`
+	ID                  uuid.UUID        `json:"id"`
+	TenantID            uuid.UUID        `json:"tenantId"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	PasswordHash        string           `json:"passwordHash"`
+	LastLogin           *time.Time       `json:"lastLogin"`
+	LoginAttempts       int32            `json:"loginAttempts"`
+	IsLocked            bool             `json:"isLocked"`
+	LockedUntil         *time.Time       `json:"lockedUntil"`
+	PasswordResetToken  *string          `json:"passwordResetToken"`
+	TokenExpiry         *time.Time       `json:"tokenExpiry"`
+	MustChangePassword  bool             `json:"mustChangePassword"`
+	EmailVerified       bool             `json:"emailVerified"`
+	MfaEnabled          bool             `json:"mfaEnabled"`
+	LastPasswordChange  *time.Time       `json:"lastPasswordChange"`
+	UserType            string           `json:"userType"`
+	RoleID              *uuid.UUID       `json:"roleId"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
+	DeletedAt           *time.Time       `json:"deletedAt"`
+	CreatedAt           time.Time        `json:"createdAt"`
+	UpdatedAt           time.Time        `json:"updatedAt"`
+	FullName            *string          `json:"fullName"`
+	Phone               *string          `json:"phone"`
+	AvatarUrl           *string          `json:"avatarUrl"`
+	Timezone            *string          `json:"timezone"`
 }
 
 func (q *Queries) ListUsersWithProfilesByTenant(ctx context.Context, tenantID uuid.UUID) ([]ListUsersWithProfilesByTenantRow, error) {
@@ -1853,6 +2165,8 @@ func (q *Queries) ListUsersWithProfilesByTenant(ctx context.Context, tenantID uu
 			&i.MfaEnabled,
 			&i.LastPasswordChange,
 			&i.UserType,
+			&i.RoleID,
+			&i.PermissionsOverride,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1889,7 +2203,7 @@ SET
     token_expiry = $3,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 type SetPasswordResetTokenParams struct {
@@ -1918,6 +2232,8 @@ func (q *Queries) SetPasswordResetToken(ctx context.Context, arg SetPasswordRese
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1963,7 +2279,7 @@ SET
     locked_until = $4,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 type UpdateLoginAttemptsParams struct {
@@ -1998,6 +2314,8 @@ func (q *Queries) UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemp
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2013,7 +2331,7 @@ SET
     must_change_password = $3,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 type UpdatePasswordParams struct {
@@ -2042,6 +2360,8 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2054,20 +2374,18 @@ UPDATE roles
 SET 
     name = $2,
     description = $3,
-    permission_template = $4,
-    is_default = $5,
+    permissions = $4,
     updated_at = NOW()
-WHERE id = $1 AND tenant_id = $6
-RETURNING id, tenant_id, name, description, permission_template, is_default, created_at, updated_at
+WHERE id = $1 AND tenant_id = $5
+RETURNING id, tenant_id, name, description, permissions, is_default, created_at, updated_at
 `
 
 type UpdateRoleParams struct {
-	ID                 uuid.UUID       `json:"id"`
-	Name               string          `json:"name"`
-	Description        *string         `json:"description"`
-	PermissionTemplate json.RawMessage `json:"permissionTemplate"`
-	IsDefault          bool            `json:"isDefault"`
-	TenantID           uuid.UUID       `json:"tenantId"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Permissions json.RawMessage `json:"permissions"`
+	TenantID    uuid.UUID       `json:"tenantId"`
 }
 
 func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, error) {
@@ -2075,8 +2393,7 @@ func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, e
 		arg.ID,
 		arg.Name,
 		arg.Description,
-		arg.PermissionTemplate,
-		arg.IsDefault,
+		arg.Permissions,
 		arg.TenantID,
 	)
 	var i Role
@@ -2085,7 +2402,7 @@ func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, e
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.PermissionTemplate,
+		&i.Permissions,
 		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2155,27 +2472,31 @@ SET
     last_password_change = $13,
     user_type = $14,
     tenant_id = $15,
+    role_id = $16,
+    permissions_override = $17,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 type UpdateUserParams struct {
-	ID                 uuid.UUID  `json:"id"`
-	Username           string     `json:"username"`
-	Email              string     `json:"email"`
-	LastLogin          *time.Time `json:"lastLogin"`
-	LoginAttempts      int32      `json:"loginAttempts"`
-	IsLocked           bool       `json:"isLocked"`
-	LockedUntil        *time.Time `json:"lockedUntil"`
-	PasswordResetToken *string    `json:"passwordResetToken"`
-	TokenExpiry        *time.Time `json:"tokenExpiry"`
-	MustChangePassword bool       `json:"mustChangePassword"`
-	EmailVerified      bool       `json:"emailVerified"`
-	MfaEnabled         bool       `json:"mfaEnabled"`
-	LastPasswordChange *time.Time `json:"lastPasswordChange"`
-	UserType           string     `json:"userType"`
-	TenantID           uuid.UUID  `json:"tenantId"`
+	ID                  uuid.UUID        `json:"id"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	LastLogin           *time.Time       `json:"lastLogin"`
+	LoginAttempts       int32            `json:"loginAttempts"`
+	IsLocked            bool             `json:"isLocked"`
+	LockedUntil         *time.Time       `json:"lockedUntil"`
+	PasswordResetToken  *string          `json:"passwordResetToken"`
+	TokenExpiry         *time.Time       `json:"tokenExpiry"`
+	MustChangePassword  bool             `json:"mustChangePassword"`
+	EmailVerified       bool             `json:"emailVerified"`
+	MfaEnabled          bool             `json:"mfaEnabled"`
+	LastPasswordChange  *time.Time       `json:"lastPasswordChange"`
+	UserType            string           `json:"userType"`
+	TenantID            uuid.UUID        `json:"tenantId"`
+	RoleID              *uuid.UUID       `json:"roleId"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
@@ -2195,6 +2516,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.LastPasswordChange,
 		arg.UserType,
 		arg.TenantID,
+		arg.RoleID,
+		arg.PermissionsOverride,
 	)
 	var i User
 	err := row.Scan(
@@ -2214,6 +2537,52 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserPermissionsOverride = `-- name: UpdateUserPermissionsOverride :one
+UPDATE users 
+SET 
+    permissions_override = $2,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
+`
+
+type UpdateUserPermissionsOverrideParams struct {
+	ID                  uuid.UUID        `json:"id"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
+	TenantID            uuid.UUID        `json:"tenantId"`
+}
+
+func (q *Queries) UpdateUserPermissionsOverride(ctx context.Context, arg UpdateUserPermissionsOverrideParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPermissionsOverride, arg.ID, arg.PermissionsOverride, arg.TenantID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2228,19 +2597,17 @@ SET
     phone = $3,
     avatar_url = $4,
     timezone = $5,
-    permissions = $6,
     updated_at = NOW()
 WHERE user_id = $1
-RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at
+RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, created_at, updated_at
 `
 
 type UpdateUserProfileParams struct {
-	UserID      uuid.UUID       `json:"userId"`
-	FullName    *string         `json:"fullName"`
-	Phone       *string         `json:"phone"`
-	AvatarUrl   *string         `json:"avatarUrl"`
-	Timezone    *string         `json:"timezone"`
-	Permissions json.RawMessage `json:"permissions"`
+	UserID    uuid.UUID `json:"userId"`
+	FullName  *string   `json:"fullName"`
+	Phone     *string   `json:"phone"`
+	AvatarUrl *string   `json:"avatarUrl"`
+	Timezone  *string   `json:"timezone"`
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (UserProfile, error) {
@@ -2250,7 +2617,6 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.Phone,
 		arg.AvatarUrl,
 		arg.Timezone,
-		arg.Permissions,
 	)
 	var i UserProfile
 	err := row.Scan(
@@ -2261,7 +2627,6 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Phone,
 		&i.AvatarUrl,
 		&i.Timezone,
-		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2275,20 +2640,18 @@ SET
     phone = $3,
     avatar_url = $4,
     timezone = $5,
-    permissions = $6,
     updated_at = NOW()
-WHERE user_id = $1 AND tenant_id = $7
-RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, permissions, created_at, updated_at
+WHERE user_id = $1 AND tenant_id = $6
+RETURNING id, user_id, tenant_id, full_name, phone, avatar_url, timezone, created_at, updated_at
 `
 
 type UpdateUserProfileByTenantParams struct {
-	UserID      uuid.UUID       `json:"userId"`
-	FullName    *string         `json:"fullName"`
-	Phone       *string         `json:"phone"`
-	AvatarUrl   *string         `json:"avatarUrl"`
-	Timezone    *string         `json:"timezone"`
-	Permissions json.RawMessage `json:"permissions"`
-	TenantID    uuid.UUID       `json:"tenantId"`
+	UserID    uuid.UUID `json:"userId"`
+	FullName  *string   `json:"fullName"`
+	Phone     *string   `json:"phone"`
+	AvatarUrl *string   `json:"avatarUrl"`
+	Timezone  *string   `json:"timezone"`
+	TenantID  uuid.UUID `json:"tenantId"`
 }
 
 func (q *Queries) UpdateUserProfileByTenant(ctx context.Context, arg UpdateUserProfileByTenantParams) (UserProfile, error) {
@@ -2298,7 +2661,6 @@ func (q *Queries) UpdateUserProfileByTenant(ctx context.Context, arg UpdateUserP
 		arg.Phone,
 		arg.AvatarUrl,
 		arg.Timezone,
-		arg.Permissions,
 		arg.TenantID,
 	)
 	var i UserProfile
@@ -2310,7 +2672,50 @@ func (q *Queries) UpdateUserProfileByTenant(ctx context.Context, arg UpdateUserP
 		&i.Phone,
 		&i.AvatarUrl,
 		&i.Timezone,
-		&i.Permissions,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserRole = `-- name: UpdateUserRole :one
+UPDATE users 
+SET 
+    role_id = $2,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
+`
+
+type UpdateUserRoleParams struct {
+	ID       uuid.UUID  `json:"id"`
+	RoleID   *uuid.UUID `json:"roleId"`
+	TenantID uuid.UUID  `json:"tenantId"`
+}
+
+func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserRole, arg.ID, arg.RoleID, arg.TenantID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.LastLogin,
+		&i.LoginAttempts,
+		&i.IsLocked,
+		&i.LockedUntil,
+		&i.PasswordResetToken,
+		&i.TokenExpiry,
+		&i.MustChangePassword,
+		&i.EmailVerified,
+		&i.MfaEnabled,
+		&i.LastPasswordChange,
+		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
+		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2323,7 +2728,7 @@ SET
     email_verified = TRUE,
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, username, email, password_hash, last_login, login_attempts, is_locked, locked_until, password_reset_token, token_expiry, must_change_password, email_verified, mfa_enabled, last_password_change, user_type, role_id, permissions_override, deleted_at, created_at, updated_at
 `
 
 func (q *Queries) VerifyEmail(ctx context.Context, id uuid.UUID) (User, error) {
@@ -2346,6 +2751,8 @@ func (q *Queries) VerifyEmail(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.MfaEnabled,
 		&i.LastPasswordChange,
 		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,

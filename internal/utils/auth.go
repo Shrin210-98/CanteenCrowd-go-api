@@ -33,9 +33,10 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateTokens(userID uuid.UUID, tenantID uuid.UUID, jwtSecret string) (string, error) {
+func GenerateTokens(userID uuid.UUID, tenantID uuid.UUID, userType string, jwtSecret string) (string, error) {
 	claims := CustomClaims{
 		TenantID: tenantID.String(),
+		UserType: userType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
@@ -48,7 +49,7 @@ func GenerateTokens(userID uuid.UUID, tenantID uuid.UUID, jwtSecret string) (str
 	return token.SignedString([]byte(jwtSecret))
 }
 
-func ValidateToken(tokenString string, jwtSecret string) (uuid.UUID, uuid.UUID, error) {
+func ValidateToken(tokenString string, jwtSecret string) (uuid.UUID, uuid.UUID, string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -57,24 +58,24 @@ func ValidateToken(tokenString string, jwtSecret string) (uuid.UUID, uuid.UUID, 
 	})
 
 	if err != nil {
-		return uuid.Nil, uuid.Nil, err
+		return uuid.Nil, uuid.Nil, "", err
 	}
 
 	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
 		// Parse userID from Subject
 		userID, err := uuid.Parse(claims.Subject)
 		if err != nil {
-			return uuid.Nil, uuid.Nil, errors.New("invalid user ID in token")
+			return uuid.Nil, uuid.Nil, "", errors.New("invalid user ID in token")
 		}
 
 		// Parse tenantID from custom claim
 		tenantID, err := uuid.Parse(claims.TenantID)
 		if err != nil {
-			return uuid.Nil, uuid.Nil, errors.New("invalid tenant ID in token")
+			return uuid.Nil, uuid.Nil, "", errors.New("invalid tenant ID in token")
 		}
 
-		return userID, tenantID, nil
+		return userID, tenantID, claims.UserType, nil
 	}
 
-	return uuid.Nil, uuid.Nil, errors.New("invalid token")
+	return uuid.Nil, uuid.Nil, "", errors.New("invalid token")
 }

@@ -93,14 +93,14 @@ type RefreshToken struct {
 }
 
 type Role struct {
-	ID                 uuid.UUID       `json:"id"`
-	TenantID           uuid.UUID       `json:"tenantId"`
-	Name               string          `json:"name"`
-	Description        *string         `json:"description"`
-	PermissionTemplate json.RawMessage `json:"permissionTemplate"`
-	IsDefault          bool            `json:"isDefault"`
-	CreatedAt          time.Time       `json:"createdAt"`
-	UpdatedAt          time.Time       `json:"updatedAt"`
+	ID          uuid.UUID       `json:"id"`
+	TenantID    uuid.UUID       `json:"tenantId"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Permissions json.RawMessage `json:"permissions"`
+	IsDefault   bool            `json:"isDefault"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
 }
 
 type Tenant struct {
@@ -115,38 +115,39 @@ type Tenant struct {
 }
 
 type User struct {
-	ID                 uuid.UUID  `json:"id"`
-	TenantID           uuid.UUID  `json:"tenantId"`
-	Username           string     `json:"username"`
-	Email              string     `json:"email"`
-	PasswordHash       string     `json:"passwordHash"`
-	LastLogin          *time.Time `json:"lastLogin"`
-	LoginAttempts      int32      `json:"loginAttempts"`
-	IsLocked           bool       `json:"isLocked"`
-	LockedUntil        *time.Time `json:"lockedUntil"`
-	PasswordResetToken *string    `json:"passwordResetToken"`
-	TokenExpiry        *time.Time `json:"tokenExpiry"`
-	MustChangePassword bool       `json:"mustChangePassword"`
-	EmailVerified      bool       `json:"emailVerified"`
-	MfaEnabled         bool       `json:"mfaEnabled"`
-	LastPasswordChange *time.Time `json:"lastPasswordChange"`
-	UserType           string     `json:"userType"`
-	DeletedAt          *time.Time `json:"deletedAt"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
+	ID                  uuid.UUID        `json:"id"`
+	TenantID            uuid.UUID        `json:"tenantId"`
+	Username            string           `json:"username"`
+	Email               string           `json:"email"`
+	PasswordHash        string           `json:"passwordHash"`
+	LastLogin           *time.Time       `json:"lastLogin"`
+	LoginAttempts       int32            `json:"loginAttempts"`
+	IsLocked            bool             `json:"isLocked"`
+	LockedUntil         *time.Time       `json:"lockedUntil"`
+	PasswordResetToken  *string          `json:"passwordResetToken"`
+	TokenExpiry         *time.Time       `json:"tokenExpiry"`
+	MustChangePassword  bool             `json:"mustChangePassword"`
+	EmailVerified       bool             `json:"emailVerified"`
+	MfaEnabled          bool             `json:"mfaEnabled"`
+	LastPasswordChange  *time.Time       `json:"lastPasswordChange"`
+	UserType            string           `json:"userType"`
+	RoleID              *uuid.UUID       `json:"roleId"`
+	PermissionsOverride *json.RawMessage `json:"permissionsOverride"`
+	DeletedAt           *time.Time       `json:"deletedAt"`
+	CreatedAt           time.Time        `json:"createdAt"`
+	UpdatedAt           time.Time        `json:"updatedAt"`
 }
 
 type UserProfile struct {
-	ID          uuid.UUID       `json:"id"`
-	UserID      uuid.UUID       `json:"userId"`
-	TenantID    uuid.UUID       `json:"tenantId"`
-	FullName    *string         `json:"fullName"`
-	Phone       *string         `json:"phone"`
-	AvatarUrl   *string         `json:"avatarUrl"`
-	Timezone    *string         `json:"timezone"`
-	Permissions json.RawMessage `json:"permissions"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"userId"`
+	TenantID  uuid.UUID `json:"tenantId"`
+	FullName  *string   `json:"fullName"`
+	Phone     *string   `json:"phone"`
+	AvatarUrl *string   `json:"avatarUrl"`
+	Timezone  *string   `json:"timezone"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type UserToken struct {

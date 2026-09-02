@@ -32,17 +32,20 @@ func getTenantID(r *http.Request) (uuid.UUID, bool) {
 }
 
 type CreateUserRequest struct {
-	EmployeeID *uuid.UUID `json:"employeeId,omitempty" validate:"required_if=UserType staff,uuid"`
-	Username   string     `json:"username" validate:"required,min=3,max=50"`
-	Email      string     `json:"email" validate:"required,email"`
-	Password   string     `json:"password" validate:"required,min=8,max=100"`
-	UserType   string     `json:"userType" validate:"required,oneof=staff guest"`
+	EmployeeID          *uuid.UUID      `json:"employeeId,omitempty" validate:"required_if=UserType staff,uuid"`
+	Username            string          `json:"username" validate:"required,min=3,max=50"`
+	Email               string          `json:"email" validate:"required,email"`
+	Password            string          `json:"password" validate:"required,min=8,max=100"`
+	UserType            string          `json:"userType" validate:"required,oneof=staff guest"`
+	RoleID              *uuid.UUID      `json:"roleId,omitempty" validate:"omitempty,uuid"`
+	PermissionsOverride json.RawMessage `json:"permissionsOverride"`
 }
 
 type UpdateUserRequest struct {
-	Username *string `json:"username,omitempty" validate:"omitempty,min=3,max=50"`
-	Email    *string `json:"email,omitempty" validate:"omitempty,email"`
-	IsLocked *bool   `json:"isLocked,omitempty"`
+	Username *string    `json:"username,omitempty" validate:"omitempty,min=3,max=50"`
+	Email    *string    `json:"email,omitempty" validate:"omitempty,email"`
+	IsLocked *bool      `json:"isLocked,omitempty"`
+	RoleID   *uuid.UUID `json:"roleId,omitempty" validate:"omitempty,uuid"`
 }
 
 type UserResponse struct {
@@ -57,6 +60,8 @@ type UserResponse struct {
 	UpdatedAt     time.Time  `json:"updatedAt"`
 	EmployeeID    *uuid.UUID `json:"employeeId,omitempty"`
 	EmployeeName  *string    `json:"employeeName,omitempty"`
+	RoleID        *uuid.UUID `json:"roleId,omitempty"`
+	RoleName      *string    `json:"roleName,omitempty"`
 }
 
 type EmployeeEligibleResponse struct {
@@ -73,13 +78,15 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-
-	// Check authorization
-	userType, _ := r.Context().Value("userType").(string)
+	userType, _ := r.Context().Value(constants.ContextKeyUserType).(string)
 	if userType != "tenant_owner" {
 		utils.ErrorResponse(w, http.StatusForbidden, "Only tenant owner can create users")
 		return
 	}
+
+	log.Printf("DEBUG - db is nil: %v", h.db == nil)
+	log.Printf("DEBUG - pool is nil: %v", h.pool == nil)
+	// log.Printf("DEBUG - Pool is nil: %v", h.Pool == nil)
 
 	var req CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -151,6 +158,29 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var roleID *uuid.UUID
+	var permissionsOverride *json.RawMessage
+
+	// Role is optional, but if provided, validate it exists
+	if req.RoleID != nil {
+		role, err := h.db.GetRoleByID(r.Context(), *req.RoleID)
+		if err != nil {
+			utils.HandleDBError(w, err, "GetRoleByID", "Role not found")
+			return
+		}
+		roleID = &role.ID
+	}
+
+	// Handle permissions override if provided
+	if req.PermissionsOverride != nil && len(req.PermissionsOverride) > 0 {
+		// Validate the permissions format
+		var permissions []utils.PermissionNode
+		if err := json.Unmarshal(req.PermissionsOverride, &permissions); err != nil {
+			utils.ErrorResponse(w, http.StatusBadRequest, "Invalid permissions format")
+			return
+		}
+		permissionsOverride = &req.PermissionsOverride
+	}
 	// Hash password
 	passwordHash, err := utils.HashPassword(req.Password)
 	if err != nil {
@@ -171,11 +201,13 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Create user
 	user, err := qtx.CreateUser(r.Context(), database.CreateUserParams{
-		TenantID:     tenantID,
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: passwordHash,
-		UserType:     req.UserType,
+		TenantID:            tenantID,
+		Username:            req.Username,
+		Email:               req.Email,
+		PasswordHash:        passwordHash,
+		UserType:            req.UserType,
+		RoleID:              roleID,
+		PermissionsOverride: permissionsOverride,
 	})
 	if err != nil {
 		utils.HandleDBError(w, err, "CreateUser")
@@ -276,10 +308,12 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	time.Sleep(3 * time.Second)
+
 	utils.PaginatedResponse(w, http.StatusOK, users, "Users retrieved successfully", page, pageSize, int(totalCount))
 }
 
-func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetUserById(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := getTenantID(r)
 	if !ok {
 		utils.ErrorResponse(w, http.StatusUnauthorized, "Unauthorized")
