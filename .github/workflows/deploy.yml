@@ -31,27 +31,20 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
+          username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
             cd /home/ec2-user/app
 
-            # Create scripts directory if not exists
-            mkdir -p scripts
-
-            # Pull latest code
+            echo "📥 Pulling latest code..."
             if [ -d ".git" ]; then
               git fetch origin main
               git reset --hard origin/main
             else
-              git clone https://github.com/Shrin210-98/CanteenCrowd-go-api.git
-              #For private repo: git clone https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
+              git clone https://github.com/Shrin210-98/CanteenCrowd-go-api.git .
             fi
 
-            # Make scripts executable
-            chmod +x scripts/*.sh 2>/dev/null || true
-
-            # Create .env file
+            echo "🔐 Setting up environment variables..."
             cat > .env << 'ENVEOF'
             DB_DATABASE=${{ secrets.DB_DATABASE }}
             DB_USERNAME=${{ secrets.DB_USERNAME }}
@@ -62,15 +55,13 @@ jobs:
             GIN_MODE=release
             ENVEOF
 
-            # Deploy
+            echo "🐳 Building and deploying containers..."
             docker compose -f docker-compose.prod.yml up -d --build
-            # docker compose -f docker-compose.prod.yml pull
-            # docker compose -f docker-compose.prod.yml up -d
 
-            # Clean up
+            echo "🧹 Cleaning up old images..."
             docker image prune -f
 
-            # Check status
+            echo "🔍 Checking deployment status..."
             sleep 10
             if docker compose -f docker-compose.prod.yml ps | grep -q "unhealthy\|exited"; then
               echo "❌ Deployment failed!"
@@ -80,6 +71,3 @@ jobs:
 
             echo "✅ Deployment successful!"
             docker compose -f docker-compose.prod.yml ps
-
-            EC2_HOST=your-ec2-public-ip
-
