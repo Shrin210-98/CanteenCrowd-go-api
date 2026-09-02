@@ -24,6 +24,7 @@ var (
 	port      = os.Getenv("DB_PORT")
 	host      = os.Getenv("DB_HOST")
 	schema    = os.Getenv("DB_SCHEMA")
+	sslmode   = os.Getenv("DB_SSLMODE")
 	jwtSecret = os.Getenv("JWT_SECRET")
 )
 
@@ -46,7 +47,7 @@ func NewServer() *http.Server {
 	// mux := RegisterRoutes(handlers.NewHandler(queries, jwtSecret, conn))
 
 	// -- Connecting Database Pool --
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s", host, port, username, password, dbName, schema)
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s search_path=%s", host, port, username, password, dbName, sslmode, schema)
 
 	// Create connection pool
 	pool, err := pgxpool.New(context.Background(), connStr)

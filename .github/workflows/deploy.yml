@@ -59,6 +59,7 @@ jobs:
             DB_HOST=${{ secrets.DB_HOST }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             GIN_MODE=release
+            DB_SSLMODE=require
             ENVEOF
 
             echo "🐳 Building and deploying containers..."
