@@ -1,20 +1,29 @@
 
 # CanteenCrowd-go-api
 
-**A multi-tenant Management System API built with Go, featuring Role-Based Access Control (RBAC)**
+**Simplify workforce management with type-safe SQL and granular RBAC in a multi-tenant system — powered by Go, PostgreSQL, and React**
 
 ## Tech Stack
 
-- **Language**: Go
+### Backend
+- **Language**: Go 1.26
 - **Database**: PostgreSQL 17
-- **SQL Compiler to Go**: sqlc (v1.27.0)
-- **Database Driver**: pgx/v5 (pgxpool)
-- **Router**: Standard net/http
+- **SQL Compiler to Go**: sqlc (v1.27.0) - *Not an ORM!*
+- **Database Driver**: pgx/v5 (pgxpool) - Fastest PostgreSQL driver for Go
+- **Router**: Standard net/http (Go 1.22+ enhanced routing)
 - **JWT**: golang-jwt/jwt/v5
 - **UUID**: github.com/google/uuid
 - **Validation**: github.com/go-playground/validator/v10
 - **Migrations**: golang-migrate
 - **Container**: Docker & Docker Compose
+
+### Frontend
+- **UI Library**: React 19
+- **Styling**: Tailwind CSS v4
+- **Build Tool**: Vite (no framework, vanilla React)
+- **State Management**: React Context + Hooks
+- **HTTP Client**: Axios
+- **Form Validation**: React Hook Form + Zod
 
 ## Features
 
