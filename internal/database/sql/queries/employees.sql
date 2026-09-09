@@ -6,8 +6,14 @@ WHERE tenant_id = $1 AND is_active = TRUE
 ORDER BY name ASC;
 
 -- name: CreateDepartment :one
-INSERT INTO departments (tenant_id, name, description) 
-VALUES ($1, $2, $3) 
+INSERT INTO departments (
+    tenant_id,
+    name,
+    description,
+    department_type,
+    is_system,
+    is_active
+) VALUES ($1, $2, $3, $4, $5, TRUE)
 RETURNING *;
 
 -- name: UpdateDepartment :one
@@ -19,9 +25,14 @@ SET
 WHERE id = $1 AND tenant_id = $4
 RETURNING *;
 
--- name: DeleteDepartment :exec
-DELETE FROM departments 
-WHERE id = $1 AND tenant_id = $2;
+-- name: DeleteDepartment :one
+UPDATE departments 
+SET is_active = FALSE,
+    updated_at = NOW()
+WHERE id = $1 
+  AND tenant_id = $2 
+  AND is_system = FALSE 
+RETURNING *;
 
 -- name: SoftDeleteDepartment :exec
 UPDATE departments 
@@ -202,6 +213,9 @@ AND
 AND
     (e.hire_date <= @hire_date_end OR @hire_date_end IS NULL);
 
+-- name: CountEmployeesInDepartment :one
+SELECT COUNT(*) FROM employees 
+WHERE department_id = $1 AND tenant_id = $2 AND is_active = TRUE;
 
 -- ============ EMPLOYEE-USER LINK QUERIES ============
 
@@ -247,3 +261,142 @@ FROM employees e
 LEFT JOIN users u ON e.user_id = u.id AND u.deleted_at IS NULL
 WHERE e.tenant_id = $1 AND e.is_active = TRUE
 ORDER BY e.first_name, e.last_name;
+
+-- ============ EMPLOYEE Reporting Tree QUERIES ============
+
+-- name: GetEmployeeHierarchy :many
+WITH RECURSIVE hierarchy AS (
+    -- Base: Get all employees with no manager (top level)
+    SELECT 
+        e.id,
+        e.reports_to,
+        e.first_name,
+        e.last_name,
+        p.title as position_title,
+        0 as hierarchy_level,
+        ARRAY[e.id] as path
+    FROM employees e
+    LEFT JOIN positions p ON p.id = e.position_id
+    WHERE e.tenant_id = $1 
+      AND e.reports_to IS NULL
+      AND e.is_active = TRUE
+    
+    UNION ALL
+    
+    -- Recursive: Get subordinates
+    SELECT 
+        e.id,
+        e.reports_to,
+        e.first_name,
+        e.last_name,
+        p.title as position_title,
+        h.hierarchy_level + 1,
+        h.path || e.id
+    FROM employees e
+    JOIN hierarchy h ON e.reports_to = h.id
+    LEFT JOIN positions p ON p.id = e.position_id
+    WHERE e.tenant_id = $1
+      AND e.is_active = TRUE
+      AND NOT e.id = ANY(h.path)
+)
+SELECT * FROM hierarchy ORDER BY path;
+
+-- name: GetDirectReports :many
+SELECT 
+    e.*,
+    p.title as position_title
+FROM employees e
+LEFT JOIN positions p ON p.id = e.position_id
+WHERE e.tenant_id = $1 
+  AND e.reports_to = $2
+  AND e.is_active = TRUE
+ORDER BY e.first_name, e.last_name;
+
+-- name: GetEmployeeWithManager :one
+SELECT 
+    e.*,
+    m.first_name as manager_first_name,
+    m.last_name as manager_last_name,
+    p.title as position_title
+FROM employees e
+LEFT JOIN employees m ON m.id = e.reports_to
+LEFT JOIN positions p ON p.id = e.position_id
+WHERE e.id = $1 AND e.tenant_id = $2;
+
+-- name: UpdateEmployeeReportsTo :one
+UPDATE employees 
+SET 
+    reports_to = $3,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $2
+RETURNING *;
+
+-- name: GetUnassignedEmployees :many
+SELECT 
+    e.*,
+    p.title as position_title
+FROM employees e
+LEFT JOIN positions p ON p.id = e.position_id
+WHERE e.tenant_id = $1 
+  AND e.reports_to IS NULL
+  AND e.is_active = TRUE
+  AND e.id != $2
+ORDER BY e.first_name, e.last_name;
+
+-- -- name: IsDescendant :one
+-- SELECT EXISTS (
+--     SELECT 1
+--     FROM employees e
+--     WHERE e.id = $1
+--       AND e.id IN (
+--           WITH RECURSIVE ancestors AS (
+--               SELECT id, reports_to
+--               FROM employees
+--               WHERE id = $2
+              
+--               UNION ALL
+              
+--               SELECT e.id, e.reports_to
+--               FROM employees e
+--               JOIN ancestors ON e.id = ancestors.reports_to
+--           )
+--           SELECT id FROM ancestors
+--       )
+-- ) AS is_ancestor;
+
+-- ============ Support Chat QUERIES ============
+
+-- name: GetSupportDepartments :many
+SELECT * FROM departments 
+WHERE tenant_id = $1 
+  AND department_type = 'support'
+  AND is_active = TRUE
+ORDER BY name;
+
+-- name: GetSupportTeamMembers :many
+SELECT e.*
+FROM employees e
+WHERE e.tenant_id = $1 
+  AND e.department_id = $2
+  AND e.is_active = TRUE
+ORDER BY e.first_name, e.last_name;
+
+-- name: GetAvailableSupportAgent :one
+SELECT e.*
+FROM employees e
+LEFT JOIN requests r ON r.assignee_id = e.id 
+  AND r.status IN ('new', 'acknowledged', 'in_progress')
+WHERE e.department_id = $1
+  AND e.tenant_id = $2
+  AND e.is_active = TRUE
+GROUP BY e.id
+ORDER BY COUNT(r.id) ASC
+LIMIT 1;
+
+-- name: GetSupportDepartmentByCategory :one
+SELECT * FROM departments 
+WHERE tenant_id = $1 
+  AND department_type = 'support'
+  AND name ILIKE '%' || sqlc.arg(category) || '%'
+  AND is_active = TRUE
+LIMIT 1;

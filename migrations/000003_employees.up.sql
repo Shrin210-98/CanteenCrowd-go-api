@@ -4,8 +4,9 @@ CREATE TABLE departments (
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
-    manager_id UUID, -- Will add FK constraint after employees table is created
+    department_type TEXT NOT NULL DEFAULT 'operational',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_system BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
@@ -45,6 +46,7 @@ CREATE TABLE employees (
     termination_date DATE,
     position_id UUID NOT NULL REFERENCES positions(id) ON DELETE RESTRICT,
     department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+    reports_to UUID REFERENCES employees(id) ON DELETE SET NULL,
     salary DECIMAL(10,2),
     emergency_contact_name TEXT,
     emergency_contact_phone TEXT,
@@ -61,11 +63,6 @@ CREATE INDEX idx_employees_tenant ON employees(tenant_id);
 CREATE INDEX idx_employees_department ON employees(department_id);
 CREATE INDEX idx_employees_position ON employees(position_id);
 CREATE INDEX idx_employees_active ON employees(tenant_id, is_active);
-
--- Add manager foreign key after employees table exists
-ALTER TABLE departments 
-ADD CONSTRAINT fk_departments_manager 
-FOREIGN KEY (manager_id) REFERENCES employees(id) ON DELETE SET NULL;
 
 -- Create triggers for updated_at
 CREATE TRIGGER update_departments_updated_at

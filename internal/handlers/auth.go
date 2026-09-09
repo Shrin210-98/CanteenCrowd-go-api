@@ -156,6 +156,20 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, dept := range constants.DefaultDepartments {
+		_, err := qtx.CreateDepartment(r.Context(), database.CreateDepartmentParams{
+			TenantID:       tenant.ID,
+			Name:           dept.Name,
+			Description:    &dept.Description,
+			DepartmentType: dept.DepartmentType,
+			IsSystem:       true,
+		})
+		if err != nil {
+			utils.HandleDBError(w, err, "CreateDepartment")
+			return
+		}
+	}
+
 	// Commit transaction
 	if err := tx.Commit(r.Context()); err != nil {
 		utils.HandleDBError(w, err, "CommitTransaction")
@@ -398,7 +412,6 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// >>> CHANGED: Get user with role and permissions instead of GetUserByID <<<
 	userWithRole, err := h.db.GetUserWithRoleAndPermissions(r.Context(), database.GetUserWithRoleAndPermissionsParams{
 		ID:       userID,
 		TenantID: tenantID,
@@ -438,7 +451,7 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add employee info for staff users
-	if userWithRole.UserType == constants.UserTypeStaff { // >>> CHANGED: Use constant <<<
+	if userWithRole.UserType == constants.UserTypeStaff {
 		employee, err := h.db.GetEmployeeByUserID(r.Context(), database.GetEmployeeByUserIDParams{
 			UserID:   &userWithRole.ID,
 			TenantID: userWithRole.TenantID,

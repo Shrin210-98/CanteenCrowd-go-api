@@ -2,6 +2,7 @@ package employees
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -122,7 +123,43 @@ func (h *Handler) DeleteDepartment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.DeleteDepartment(r.Context(), database.DeleteDepartmentParams{
+	// Get department first to check if it's a system department
+	dept, err := h.db.GetDepartmentByID(r.Context(), database.GetDepartmentByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		utils.HandleDBError(w, err, "GetDepartmentByID", "Department not found")
+		return
+	}
+
+	// Prevent deletion of system departments
+	if dept.IsSystem {
+		utils.JsonResponse(w, http.StatusForbidden, map[string]any{
+			"message": "Departments created by system cannot be deleted",
+		})
+		return
+	}
+
+	// Check if department has employees
+	employeeCount, err := h.db.CountEmployeesInDepartment(r.Context(), database.CountEmployeesInDepartmentParams{
+		DepartmentID: id,
+		TenantID:     tenantID,
+	})
+	if err != nil {
+		utils.HandleDBError(w, err, "CountEmployeesInDepartment")
+		return
+	}
+
+	if employeeCount > 0 {
+		utils.JsonResponse(w, http.StatusConflict, map[string]any{
+			"message": fmt.Sprintf("Cannot delete department with %d employees", employeeCount),
+		})
+		return
+	}
+
+	// Soft delete the department
+	deletedDept, err := h.db.DeleteDepartment(r.Context(), database.DeleteDepartmentParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
@@ -130,5 +167,11 @@ func (h *Handler) DeleteDepartment(w http.ResponseWriter, r *http.Request) {
 		utils.HandleDBError(w, err, "DeleteDepartment")
 		return
 	}
-	utils.JsonResponse(w, http.StatusOK, map[string]any{"message": "Successfully Deleted Department"})
+
+	// Optional: Use deletedDept if needed
+	_ = deletedDept
+
+	utils.JsonResponse(w, http.StatusOK, map[string]any{
+		"message": "Successfully Deleted Department",
+	})
 }
