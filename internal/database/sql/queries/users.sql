@@ -251,7 +251,7 @@ ORDER BY u.created_at DESC;
 SELECT u.* 
 FROM users u
 WHERE u.tenant_id = $1 
-  AND u.user_type IN ('staff', 'guest')
+  AND u.user_type IN ('staff', 'external')
   AND u.deleted_at IS NULL
 ORDER BY u.created_at DESC;
 
@@ -494,12 +494,11 @@ SELECT
     u.email,
     u.user_type,
     u.role_id,
-    e.first_name,
-    e.last_name,
-    r.name as role_name
+    up.full_name,
+    up.phone,
+    up.avatar_url
 FROM users u
-LEFT JOIN employees e ON u.id = e.user_id
-LEFT JOIN roles r ON u.role_id = r.id
+LEFT JOIN user_profiles up ON u.id = up.user_id
 WHERE 
     u.tenant_id = @tenant_id
 AND 
@@ -507,8 +506,7 @@ AND
 AND
     (u.username ILIKE '%' || @search::text || '%' 
      OR u.email ILIKE '%' || @search::text || '%'
-     OR e.first_name ILIKE '%' || @search::text || '%'
-     OR e.last_name ILIKE '%' || @search::text || '%'
+     OR up.full_name ILIKE '%' || @search::text || '%'
      OR @search::text = '')
 AND
     (u.user_type = @user_type OR @user_type = '')
@@ -517,7 +515,7 @@ LIMIT @limit_count OFFSET @offset_count;
 
 -- name: CountUsersWithFilters :one
 SELECT COUNT(*) FROM users u
-LEFT JOIN employees e ON u.id = e.user_id
+LEFT JOIN user_profiles up ON u.id = up.user_id
 WHERE 
     u.tenant_id = @tenant_id
 AND 
@@ -525,12 +523,11 @@ AND
 AND
     (u.username ILIKE '%' || @search::text || '%' 
      OR u.email ILIKE '%' || @search::text || '%'
-     OR e.first_name ILIKE '%' || @search::text || '%'
-     OR e.last_name ILIKE '%' || @search::text || '%'
+     OR up.full_name ILIKE '%' || @search::text || '%'
      OR @search::text = '')
 AND
     (u.user_type = @user_type OR @user_type = '');
-
+    
 -- name: GetUsersWithRoleAndOverrideStatus :many
 SELECT 
     u.id,
@@ -580,3 +577,20 @@ WHERE role_id = $1
 UPDATE users 
 SET permissions_override = NULL, updated_at = NOW()
 WHERE role_id = $1 AND tenant_id = $2 AND deleted_at IS NULL;
+
+-- name: GetUserWithPermissions :one
+SELECT 
+    u.id,
+    u.tenant_id,
+    u.username,
+    u.email,
+    u.user_type,
+    u.role_id,
+    u.permissions_override,
+    COALESCE(u.permissions_override, r.permissions) as effective_permissions,
+    CASE WHEN u.permissions_override IS NOT NULL THEN TRUE ELSE FALSE END as has_permission_override
+FROM users u
+LEFT JOIN roles r ON u.role_id = r.id
+WHERE u.id = $1 
+  AND u.tenant_id = $2 
+  AND u.deleted_at IS NULL;

@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AddItemToMenuCategory(ctx context.Context, arg AddItemToMenuCategoryParams) error
+	AddRequestComment(ctx context.Context, arg AddRequestCommentParams) (RequestComment, error)
 	CheckEmailExists(ctx context.Context, email string) (bool, error)
 	CheckEmailExistsInTenant(ctx context.Context, arg CheckEmailExistsInTenantParams) (bool, error)
 	CheckEmployeeHasUser(ctx context.Context, arg CheckEmployeeHasUserParams) (bool, error)
@@ -24,6 +25,7 @@ type Querier interface {
 	CountActiveUsersByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountDepartments(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountEmployees(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountEmployeesInDepartment(ctx context.Context, arg CountEmployeesInDepartmentParams) (int64, error)
 	CountPositions(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountProfilesByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountRolesByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
@@ -34,6 +36,8 @@ type Querier interface {
 	CountUsersByType(ctx context.Context, userType string) (int64, error)
 	CountUsersWithFilters(ctx context.Context, arg CountUsersWithFiltersParams) (int64, error)
 	CountUsersWithOverridesForRole(ctx context.Context, arg CountUsersWithOverridesForRoleParams) (int64, error)
+	// Chat Messages
+	CreateChatMessage(ctx context.Context, arg CreateChatMessageParams) (RequestChatMessage, error)
 	CreateDepartment(ctx context.Context, arg CreateDepartmentParams) (Department, error)
 	CreateEmployee(ctx context.Context, arg CreateEmployeeParams) (Employee, error)
 	CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error)
@@ -41,6 +45,7 @@ type Querier interface {
 	CreatePosition(ctx context.Context, arg CreatePositionParams) (Position, error)
 	// ============ REFRESH TOKEN QUERIES ============
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
+	CreateRequest(ctx context.Context, arg CreateRequestParams) (Request, error)
 	// ============ ROLE QUERIES ============
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	// ============ TENANT QUERIES ============
@@ -51,7 +56,7 @@ type Querier interface {
 	CreateUserProfile(ctx context.Context, arg CreateUserProfileParams) (UserProfile, error)
 	// ============ USER TOKEN QUERIES ============
 	CreateUserToken(ctx context.Context, arg CreateUserTokenParams) (UserToken, error)
-	DeleteDepartment(ctx context.Context, arg DeleteDepartmentParams) error
+	DeleteDepartment(ctx context.Context, arg DeleteDepartmentParams) (Department, error)
 	DeleteEmployee(ctx context.Context, arg DeleteEmployeeParams) error
 	DeleteExpiredRefreshTokens(ctx context.Context) error
 	DeleteExpiredTokens(ctx context.Context) error
@@ -68,22 +73,64 @@ type Querier interface {
 	FilterMenuItems(ctx context.Context, arg FilterMenuItemsParams) ([]MenuItem, error)
 	GetActiveMenuItems(ctx context.Context) ([]MenuItem, error)
 	GetActiveMenus(ctx context.Context) ([]Menu, error)
+	GetAllTenantSupportRequests(ctx context.Context, arg GetAllTenantSupportRequestsParams) ([]GetAllTenantSupportRequestsRow, error)
+	GetAvailableSupportAgent(ctx context.Context, arg GetAvailableSupportAgentParams) (Employee, error)
+	GetChatMessages(ctx context.Context, requestID uuid.UUID) ([]GetChatMessagesRow, error)
 	GetDepartmentByID(ctx context.Context, arg GetDepartmentByIDParams) (Department, error)
+	GetDepartmentMembers(ctx context.Context, arg GetDepartmentMembersParams) ([]GetDepartmentMembersRow, error)
+	GetDepartmentRequestCounts(ctx context.Context, arg GetDepartmentRequestCountsParams) (GetDepartmentRequestCountsRow, error)
+	GetDepartmentRequests(ctx context.Context, arg GetDepartmentRequestsParams) ([]GetDepartmentRequestsRow, error)
+	GetDirectReports(ctx context.Context, arg GetDirectReportsParams) ([]GetDirectReportsRow, error)
 	GetEmployeeById(ctx context.Context, arg GetEmployeeByIdParams) (Employee, error)
 	GetEmployeeByUserID(ctx context.Context, arg GetEmployeeByUserIDParams) (Employee, error)
+	// ============ EMPLOYEE Reporting Tree QUERIES ============
+	GetEmployeeHierarchy(ctx context.Context, tenantID uuid.UUID) ([]GetEmployeeHierarchyRow, error)
+	GetEmployeeWithManager(ctx context.Context, arg GetEmployeeWithManagerParams) (GetEmployeeWithManagerRow, error)
 	GetMenuByID(ctx context.Context, id int32) (Menu, error)
 	GetMenuItemByID(ctx context.Context, id int32) (MenuItem, error)
 	GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsByCategoryParams) ([]MenuItem, error)
 	GetMenuItemsByIDs(ctx context.Context, dollar_1 []int32) ([]MenuItem, error)
+	GetNextRequestNumber(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	GetPosition(ctx context.Context, arg GetPositionParams) (Position, error)
 	GetRefreshToken(ctx context.Context, token string) (RefreshToken, error)
+	GetRequestByID(ctx context.Context, arg GetRequestByIDParams) (GetRequestByIDRow, error)
+	GetRequestComments(ctx context.Context, requestID uuid.UUID) ([]GetRequestCommentsRow, error)
+	GetRequestsByAssignee(ctx context.Context, arg GetRequestsByAssigneeParams) ([]GetRequestsByAssigneeRow, error)
+	GetRequestsByRequester(ctx context.Context, arg GetRequestsByRequesterParams) ([]GetRequestsByRequesterRow, error)
+	GetRequestsForManager(ctx context.Context, arg GetRequestsForManagerParams) ([]GetRequestsForManagerRow, error)
 	GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleByTenantAndName(ctx context.Context, arg GetRoleByTenantAndNameParams) (Role, error)
 	GetStaffUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]User, error)
+	GetSupportDepartmentByCategory(ctx context.Context, arg GetSupportDepartmentByCategoryParams) (Department, error)
+	// -- name: IsDescendant :one
+	// SELECT EXISTS (
+	//     SELECT 1
+	//     FROM employees e
+	//     WHERE e.id = $1
+	//       AND e.id IN (
+	//           WITH RECURSIVE ancestors AS (
+	//               SELECT id, reports_to
+	//               FROM employees
+	//               WHERE id = $2
+	//               UNION ALL
+	//               SELECT e.id, e.reports_to
+	//               FROM employees e
+	//               JOIN ancestors ON e.id = ancestors.reports_to
+	//           )
+	//           SELECT id FROM ancestors
+	//       )
+	// ) AS is_ancestor;
+	// ============ Support Chat QUERIES ============
+	GetSupportDepartments(ctx context.Context, tenantID uuid.UUID) ([]Department, error)
+	GetSupportTeamMembers(ctx context.Context, arg GetSupportTeamMembersParams) ([]Employee, error)
+	GetTeamRequests(ctx context.Context, arg GetTeamRequestsParams) ([]GetTeamRequestsRow, error)
 	GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error)
 	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
 	GetTenantStats(ctx context.Context, id uuid.UUID) (GetTenantStatsRow, error)
+	GetTenantSupportRequestCounts(ctx context.Context, arg GetTenantSupportRequestCountsParams) (GetTenantSupportRequestCountsRow, error)
 	GetTenantWithStats(ctx context.Context, id uuid.UUID) (GetTenantWithStatsRow, error)
+	GetUnassignedEmployees(ctx context.Context, arg GetUnassignedEmployeesParams) ([]GetUnassignedEmployeesRow, error)
+	GetUnreadChatCount(ctx context.Context, arg GetUnreadChatCountParams) (int64, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByResetToken(ctx context.Context, passwordResetToken *string) (User, error)
@@ -93,6 +140,7 @@ type Querier interface {
 	GetUserProfileByTenant(ctx context.Context, arg GetUserProfileByTenantParams) (UserProfile, error)
 	GetUserToken(ctx context.Context, token string) (UserToken, error)
 	GetUserTokenByType(ctx context.Context, arg GetUserTokenByTypeParams) (UserToken, error)
+	GetUserWithPermissions(ctx context.Context, arg GetUserWithPermissionsParams) (GetUserWithPermissionsRow, error)
 	// ============ JOIN QUERIES ============
 	GetUserWithProfile(ctx context.Context, id uuid.UUID) (GetUserWithProfileRow, error)
 	GetUserWithRoleAndPermissions(ctx context.Context, arg GetUserWithRoleAndPermissionsParams) (GetUserWithRoleAndPermissionsRow, error)
@@ -123,6 +171,7 @@ type Querier interface {
 	// ============ USER MANAGEMENT QUERIES ============
 	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
 	ListUsersWithProfilesByTenant(ctx context.Context, tenantID uuid.UUID) ([]ListUsersWithProfilesByTenantRow, error)
+	MarkChatMessagesRead(ctx context.Context, arg MarkChatMessagesReadParams) error
 	MarkTokenUsed(ctx context.Context, id uuid.UUID) error
 	SearchEmployees(ctx context.Context, arg SearchEmployeesParams) ([]SearchEmployeesRow, error)
 	SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) (User, error)
@@ -134,11 +183,14 @@ type Querier interface {
 	UnlinkUserFromEmployee(ctx context.Context, arg UnlinkUserFromEmployeeParams) error
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error)
 	UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) (Employee, error)
+	UpdateEmployeeReportsTo(ctx context.Context, arg UpdateEmployeeReportsToParams) (Employee, error)
 	UpdateLoginAttempts(ctx context.Context, arg UpdateLoginAttemptsParams) (User, error)
 	UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error)
 	UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error)
 	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) (User, error)
 	UpdatePosition(ctx context.Context, arg UpdatePositionParams) (Position, error)
+	UpdateRequestAssignee(ctx context.Context, arg UpdateRequestAssigneeParams) (Request, error)
+	UpdateRequestStatus(ctx context.Context, arg UpdateRequestStatusParams) (Request, error)
 	UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, error)
 	UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)

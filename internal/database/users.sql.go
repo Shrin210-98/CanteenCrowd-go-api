@@ -286,7 +286,7 @@ func (q *Queries) CountUsersByType(ctx context.Context, userType string) (int64,
 
 const countUsersWithFilters = `-- name: CountUsersWithFilters :one
 SELECT COUNT(*) FROM users u
-LEFT JOIN employees e ON u.id = e.user_id
+LEFT JOIN user_profiles up ON u.id = up.user_id
 WHERE 
     u.tenant_id = $1
 AND 
@@ -294,8 +294,7 @@ AND
 AND
     (u.username ILIKE '%' || $2::text || '%' 
      OR u.email ILIKE '%' || $2::text || '%'
-     OR e.first_name ILIKE '%' || $2::text || '%'
-     OR e.last_name ILIKE '%' || $2::text || '%'
+     OR up.full_name ILIKE '%' || $2::text || '%'
      OR $2::text = '')
 AND
     (u.user_type = $3 OR $3 = '')
@@ -747,7 +746,7 @@ const getStaffUsersByTenant = `-- name: GetStaffUsersByTenant :many
 SELECT u.id, u.tenant_id, u.username, u.email, u.password_hash, u.last_login, u.login_attempts, u.is_locked, u.locked_until, u.password_reset_token, u.token_expiry, u.must_change_password, u.email_verified, u.mfa_enabled, u.last_password_change, u.user_type, u.role_id, u.permissions_override, u.deleted_at, u.created_at, u.updated_at 
 FROM users u
 WHERE u.tenant_id = $1 
-  AND u.user_type IN ('staff', 'guest')
+  AND u.user_type IN ('staff', 'external')
   AND u.deleted_at IS NULL
 ORDER BY u.created_at DESC
 `
@@ -1192,6 +1191,58 @@ func (q *Queries) GetUserTokenByType(ctx context.Context, arg GetUserTokenByType
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UsedAt,
+	)
+	return i, err
+}
+
+const getUserWithPermissions = `-- name: GetUserWithPermissions :one
+SELECT 
+    u.id,
+    u.tenant_id,
+    u.username,
+    u.email,
+    u.user_type,
+    u.role_id,
+    u.permissions_override,
+    COALESCE(u.permissions_override, r.permissions) as effective_permissions,
+    CASE WHEN u.permissions_override IS NOT NULL THEN TRUE ELSE FALSE END as has_permission_override
+FROM users u
+LEFT JOIN roles r ON u.role_id = r.id
+WHERE u.id = $1 
+  AND u.tenant_id = $2 
+  AND u.deleted_at IS NULL
+`
+
+type GetUserWithPermissionsParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+type GetUserWithPermissionsRow struct {
+	ID                    uuid.UUID        `json:"id"`
+	TenantID              uuid.UUID        `json:"tenantId"`
+	Username              string           `json:"username"`
+	Email                 string           `json:"email"`
+	UserType              string           `json:"userType"`
+	RoleID                *uuid.UUID       `json:"roleId"`
+	PermissionsOverride   *json.RawMessage `json:"permissionsOverride"`
+	EffectivePermissions  json.RawMessage  `json:"effectivePermissions"`
+	HasPermissionOverride bool             `json:"hasPermissionOverride"`
+}
+
+func (q *Queries) GetUserWithPermissions(ctx context.Context, arg GetUserWithPermissionsParams) (GetUserWithPermissionsRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithPermissions, arg.ID, arg.TenantID)
+	var i GetUserWithPermissionsRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Username,
+		&i.Email,
+		&i.UserType,
+		&i.RoleID,
+		&i.PermissionsOverride,
+		&i.EffectivePermissions,
+		&i.HasPermissionOverride,
 	)
 	return i, err
 }
@@ -2021,12 +2072,11 @@ SELECT
     u.email,
     u.user_type,
     u.role_id,
-    e.first_name,
-    e.last_name,
-    r.name as role_name
+    up.full_name,
+    up.phone,
+    up.avatar_url
 FROM users u
-LEFT JOIN employees e ON u.id = e.user_id
-LEFT JOIN roles r ON u.role_id = r.id
+LEFT JOIN user_profiles up ON u.id = up.user_id
 WHERE 
     u.tenant_id = $1
 AND 
@@ -2034,8 +2084,7 @@ AND
 AND
     (u.username ILIKE '%' || $2::text || '%' 
      OR u.email ILIKE '%' || $2::text || '%'
-     OR e.first_name ILIKE '%' || $2::text || '%'
-     OR e.last_name ILIKE '%' || $2::text || '%'
+     OR up.full_name ILIKE '%' || $2::text || '%'
      OR $2::text = '')
 AND
     (u.user_type = $3 OR $3 = '')
@@ -2057,9 +2106,9 @@ type ListUsersWithFiltersRow struct {
 	Email     string     `json:"email"`
 	UserType  string     `json:"userType"`
 	RoleID    *uuid.UUID `json:"roleId"`
-	FirstName *string    `json:"firstName"`
-	LastName  *string    `json:"lastName"`
-	RoleName  *string    `json:"roleName"`
+	FullName  *string    `json:"fullName"`
+	Phone     *string    `json:"phone"`
+	AvatarUrl *string    `json:"avatarUrl"`
 }
 
 // ============ USER MANAGEMENT QUERIES ============
@@ -2084,9 +2133,9 @@ func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFil
 			&i.Email,
 			&i.UserType,
 			&i.RoleID,
-			&i.FirstName,
-			&i.LastName,
-			&i.RoleName,
+			&i.FullName,
+			&i.Phone,
+			&i.AvatarUrl,
 		); err != nil {
 			return nil, err
 		}

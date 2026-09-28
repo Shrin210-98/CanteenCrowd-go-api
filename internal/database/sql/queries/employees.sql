@@ -3,7 +3,7 @@
 -- name: ListDepartments :many
 SELECT * FROM departments 
 WHERE tenant_id = $1 AND is_active = TRUE
-ORDER BY name ASC;
+ORDER BY created_at DESC, name ASC;
 
 -- name: CreateDepartment :one
 INSERT INTO departments (

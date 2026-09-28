@@ -13,14 +13,15 @@ import (
 )
 
 type Department struct {
-	ID          uuid.UUID  `json:"id"`
-	TenantID    uuid.UUID  `json:"tenantId"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description"`
-	ManagerID   *uuid.UUID `json:"managerId"`
-	IsActive    bool       `json:"isActive"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
+	ID             uuid.UUID `json:"id"`
+	TenantID       uuid.UUID `json:"tenantId"`
+	Name           string    `json:"name"`
+	Description    *string   `json:"description"`
+	DepartmentType string    `json:"departmentType"`
+	IsActive       bool      `json:"isActive"`
+	IsSystem       bool      `json:"isSystem"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type Employee struct {
@@ -36,6 +37,7 @@ type Employee struct {
 	TerminationDate       *time.Time     `json:"terminationDate"`
 	PositionID            uuid.UUID      `json:"positionId"`
 	DepartmentID          uuid.UUID      `json:"departmentId"`
+	ReportsTo             *uuid.UUID     `json:"reportsTo"`
 	Salary                pgtype.Numeric `json:"salary"`
 	EmergencyContactName  *string        `json:"emergencyContactName"`
 	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
@@ -43,6 +45,30 @@ type Employee struct {
 	IsActive              bool           `json:"isActive"`
 	CreatedAt             time.Time      `json:"createdAt"`
 	UpdatedAt             time.Time      `json:"updatedAt"`
+}
+
+type ManagerPendingRequest struct {
+	ID                  uuid.UUID  `json:"id"`
+	TenantID            uuid.UUID  `json:"tenantId"`
+	RequestNumber       string     `json:"requestNumber"`
+	RequestType         string     `json:"requestType"`
+	Category            *string    `json:"category"`
+	Title               string     `json:"title"`
+	Description         *string    `json:"description"`
+	RequesterID         uuid.UUID  `json:"requesterId"`
+	AssigneeID          *uuid.UUID `json:"assigneeId"`
+	RoutedToManagerID   *uuid.UUID `json:"routedToManagerId"`
+	SupportDepartmentID *uuid.UUID `json:"supportDepartmentId"`
+	SupportCategory     *string    `json:"supportCategory"`
+	Priority            string     `json:"priority"`
+	Status              string     `json:"status"`
+	DueDate             *time.Time `json:"dueDate"`
+	CompletedAt         *time.Time `json:"completedAt"`
+	ParentRequestID     *uuid.UUID `json:"parentRequestId"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
+	RequesterFirstName  string     `json:"requesterFirstName"`
+	RequesterLastName   string     `json:"requesterLastName"`
 }
 
 type Menu struct {
@@ -92,6 +118,85 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type Request struct {
+	ID                  uuid.UUID  `json:"id"`
+	TenantID            uuid.UUID  `json:"tenantId"`
+	RequestNumber       string     `json:"requestNumber"`
+	RequestType         string     `json:"requestType"`
+	Category            *string    `json:"category"`
+	Title               string     `json:"title"`
+	Description         *string    `json:"description"`
+	RequesterID         uuid.UUID  `json:"requesterId"`
+	AssigneeID          *uuid.UUID `json:"assigneeId"`
+	RoutedToManagerID   *uuid.UUID `json:"routedToManagerId"`
+	SupportDepartmentID *uuid.UUID `json:"supportDepartmentId"`
+	SupportCategory     *string    `json:"supportCategory"`
+	Priority            string     `json:"priority"`
+	Status              string     `json:"status"`
+	DueDate             *time.Time `json:"dueDate"`
+	CompletedAt         *time.Time `json:"completedAt"`
+	ParentRequestID     *uuid.UUID `json:"parentRequestId"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
+}
+
+type RequestChatMessage struct {
+	ID        uuid.UUID  `json:"id"`
+	RequestID uuid.UUID  `json:"requestId"`
+	SenderID  uuid.UUID  `json:"senderId"`
+	Message   string     `json:"message"`
+	IsRead    bool       `json:"isRead"`
+	ReadAt    *time.Time `json:"readAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+type RequestComment struct {
+	ID        uuid.UUID `json:"id"`
+	RequestID uuid.UUID `json:"requestId"`
+	UserID    uuid.UUID `json:"userId"`
+	Comment   string    `json:"comment"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type RequestDetail struct {
+	ID                    uuid.UUID  `json:"id"`
+	TenantID              uuid.UUID  `json:"tenantId"`
+	RequestNumber         string     `json:"requestNumber"`
+	RequestType           string     `json:"requestType"`
+	Category              *string    `json:"category"`
+	Title                 string     `json:"title"`
+	Description           *string    `json:"description"`
+	RequesterID           uuid.UUID  `json:"requesterId"`
+	AssigneeID            *uuid.UUID `json:"assigneeId"`
+	RoutedToManagerID     *uuid.UUID `json:"routedToManagerId"`
+	SupportDepartmentID   *uuid.UUID `json:"supportDepartmentId"`
+	SupportCategory       *string    `json:"supportCategory"`
+	Priority              string     `json:"priority"`
+	Status                string     `json:"status"`
+	DueDate               *time.Time `json:"dueDate"`
+	CompletedAt           *time.Time `json:"completedAt"`
+	ParentRequestID       *uuid.UUID `json:"parentRequestId"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	RequesterFirstName    string     `json:"requesterFirstName"`
+	RequesterLastName     string     `json:"requesterLastName"`
+	AssigneeFirstName     *string    `json:"assigneeFirstName"`
+	AssigneeLastName      *string    `json:"assigneeLastName"`
+	ManagerFirstName      *string    `json:"managerFirstName"`
+	ManagerLastName       *string    `json:"managerLastName"`
+	SupportDepartmentName *string    `json:"supportDepartmentName"`
+}
+
+type RequestHistory struct {
+	ID           uuid.UUID `json:"id"`
+	RequestID    uuid.UUID `json:"requestId"`
+	ChangedBy    uuid.UUID `json:"changedBy"`
+	FieldChanged string    `json:"fieldChanged"`
+	OldValue     *string   `json:"oldValue"`
+	NewValue     *string   `json:"newValue"`
+	ChangedAt    time.Time `json:"changedAt"`
+}
+
 type Role struct {
 	ID          uuid.UUID       `json:"id"`
 	TenantID    uuid.UUID       `json:"tenantId"`
@@ -101,6 +206,34 @@ type Role struct {
 	IsDefault   bool            `json:"isDefault"`
 	CreatedAt   time.Time       `json:"createdAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
+}
+
+type SupportDepartmentQueue struct {
+	ID                  uuid.UUID  `json:"id"`
+	TenantID            uuid.UUID  `json:"tenantId"`
+	RequestNumber       string     `json:"requestNumber"`
+	RequestType         string     `json:"requestType"`
+	Category            *string    `json:"category"`
+	Title               string     `json:"title"`
+	Description         *string    `json:"description"`
+	RequesterID         uuid.UUID  `json:"requesterId"`
+	AssigneeID          *uuid.UUID `json:"assigneeId"`
+	RoutedToManagerID   *uuid.UUID `json:"routedToManagerId"`
+	SupportDepartmentID *uuid.UUID `json:"supportDepartmentId"`
+	SupportCategory     *string    `json:"supportCategory"`
+	Priority            string     `json:"priority"`
+	Status              string     `json:"status"`
+	DueDate             *time.Time `json:"dueDate"`
+	CompletedAt         *time.Time `json:"completedAt"`
+	ParentRequestID     *uuid.UUID `json:"parentRequestId"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
+	RequesterFirstName  string     `json:"requesterFirstName"`
+	RequesterLastName   string     `json:"requesterLastName"`
+	AssigneeFirstName   *string    `json:"assigneeFirstName"`
+	AssigneeLastName    *string    `json:"assigneeLastName"`
+	DepartmentName      *string    `json:"departmentName"`
+	ChatMessageCount    int64      `json:"chatMessageCount"`
 }
 
 type Tenant struct {

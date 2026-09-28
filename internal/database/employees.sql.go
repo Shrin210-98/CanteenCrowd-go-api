@@ -56,6 +56,23 @@ func (q *Queries) CountEmployees(ctx context.Context, tenantID uuid.UUID) (int64
 	return count, err
 }
 
+const countEmployeesInDepartment = `-- name: CountEmployeesInDepartment :one
+SELECT COUNT(*) FROM employees 
+WHERE department_id = $1 AND tenant_id = $2 AND is_active = TRUE
+`
+
+type CountEmployeesInDepartmentParams struct {
+	DepartmentID uuid.UUID `json:"departmentId"`
+	TenantID     uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) CountEmployeesInDepartment(ctx context.Context, arg CountEmployeesInDepartmentParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countEmployeesInDepartment, arg.DepartmentID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPositions = `-- name: CountPositions :one
 SELECT COUNT(*) FROM positions 
 WHERE tenant_id = $1 AND is_active = TRUE
@@ -115,27 +132,42 @@ func (q *Queries) CountSearchEmployees(ctx context.Context, arg CountSearchEmplo
 }
 
 const createDepartment = `-- name: CreateDepartment :one
-INSERT INTO departments (tenant_id, name, description) 
-VALUES ($1, $2, $3) 
-RETURNING id, tenant_id, name, description, manager_id, is_active, created_at, updated_at
+INSERT INTO departments (
+    tenant_id,
+    name,
+    description,
+    department_type,
+    is_system,
+    is_active
+) VALUES ($1, $2, $3, $4, $5, TRUE)
+RETURNING id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at
 `
 
 type CreateDepartmentParams struct {
-	TenantID    uuid.UUID `json:"tenantId"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
+	TenantID       uuid.UUID `json:"tenantId"`
+	Name           string    `json:"name"`
+	Description    *string   `json:"description"`
+	DepartmentType string    `json:"departmentType"`
+	IsSystem       bool      `json:"isSystem"`
 }
 
 func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentParams) (Department, error) {
-	row := q.db.QueryRow(ctx, createDepartment, arg.TenantID, arg.Name, arg.Description)
+	row := q.db.QueryRow(ctx, createDepartment,
+		arg.TenantID,
+		arg.Name,
+		arg.Description,
+		arg.DepartmentType,
+		arg.IsSystem,
+	)
 	var i Department
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.ManagerID,
+		&i.DepartmentType,
 		&i.IsActive,
+		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -162,7 +194,7 @@ INSERT INTO employees (
     is_active
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
-) RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
+) RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
 `
 
 type CreateEmployeeParams struct {
@@ -217,6 +249,7 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 		&i.TerminationDate,
 		&i.PositionID,
 		&i.DepartmentID,
+		&i.ReportsTo,
 		&i.Salary,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
@@ -265,9 +298,14 @@ func (q *Queries) CreatePosition(ctx context.Context, arg CreatePositionParams) 
 	return i, err
 }
 
-const deleteDepartment = `-- name: DeleteDepartment :exec
-DELETE FROM departments 
-WHERE id = $1 AND tenant_id = $2
+const deleteDepartment = `-- name: DeleteDepartment :one
+UPDATE departments 
+SET is_active = FALSE,
+    updated_at = NOW()
+WHERE id = $1 
+  AND tenant_id = $2 
+  AND is_system = FALSE 
+RETURNING id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at
 `
 
 type DeleteDepartmentParams struct {
@@ -275,9 +313,21 @@ type DeleteDepartmentParams struct {
 	TenantID uuid.UUID `json:"tenantId"`
 }
 
-func (q *Queries) DeleteDepartment(ctx context.Context, arg DeleteDepartmentParams) error {
-	_, err := q.db.Exec(ctx, deleteDepartment, arg.ID, arg.TenantID)
-	return err
+func (q *Queries) DeleteDepartment(ctx context.Context, arg DeleteDepartmentParams) (Department, error) {
+	row := q.db.QueryRow(ctx, deleteDepartment, arg.ID, arg.TenantID)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.DepartmentType,
+		&i.IsActive,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const deleteEmployee = `-- name: DeleteEmployee :exec
@@ -310,8 +360,54 @@ func (q *Queries) DeletePosition(ctx context.Context, arg DeletePositionParams) 
 	return err
 }
 
+const getAvailableSupportAgent = `-- name: GetAvailableSupportAgent :one
+SELECT e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at
+FROM employees e
+LEFT JOIN requests r ON r.assignee_id = e.id 
+  AND r.status IN ('new', 'acknowledged', 'in_progress')
+WHERE e.department_id = $1
+  AND e.tenant_id = $2
+  AND e.is_active = TRUE
+GROUP BY e.id
+ORDER BY COUNT(r.id) ASC
+LIMIT 1
+`
+
+type GetAvailableSupportAgentParams struct {
+	DepartmentID uuid.UUID `json:"departmentId"`
+	TenantID     uuid.UUID `json:"tenantId"`
+}
+
+func (q *Queries) GetAvailableSupportAgent(ctx context.Context, arg GetAvailableSupportAgentParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, getAvailableSupportAgent, arg.DepartmentID, arg.TenantID)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.HireDate,
+		&i.TerminationDate,
+		&i.PositionID,
+		&i.DepartmentID,
+		&i.ReportsTo,
+		&i.Salary,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
+		&i.ProfileDescription,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getDepartmentByID = `-- name: GetDepartmentByID :one
-SELECT id, tenant_id, name, description, manager_id, is_active, created_at, updated_at FROM departments 
+SELECT id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at FROM departments 
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -328,16 +424,100 @@ func (q *Queries) GetDepartmentByID(ctx context.Context, arg GetDepartmentByIDPa
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.ManagerID,
+		&i.DepartmentType,
 		&i.IsActive,
+		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getDirectReports = `-- name: GetDirectReports :many
+SELECT 
+    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
+    p.title as position_title
+FROM employees e
+LEFT JOIN positions p ON p.id = e.position_id
+WHERE e.tenant_id = $1 
+  AND e.reports_to = $2
+  AND e.is_active = TRUE
+ORDER BY e.first_name, e.last_name
+`
+
+type GetDirectReportsParams struct {
+	TenantID  uuid.UUID  `json:"tenantId"`
+	ReportsTo *uuid.UUID `json:"reportsTo"`
+}
+
+type GetDirectReportsRow struct {
+	ID                    uuid.UUID      `json:"id"`
+	TenantID              uuid.UUID      `json:"tenantId"`
+	UserID                *uuid.UUID     `json:"userId"`
+	FirstName             string         `json:"firstName"`
+	LastName              string         `json:"lastName"`
+	Email                 string         `json:"email"`
+	Phone                 *string        `json:"phone"`
+	Address               *string        `json:"address"`
+	HireDate              time.Time      `json:"hireDate"`
+	TerminationDate       *time.Time     `json:"terminationDate"`
+	PositionID            uuid.UUID      `json:"positionId"`
+	DepartmentID          uuid.UUID      `json:"departmentId"`
+	ReportsTo             *uuid.UUID     `json:"reportsTo"`
+	Salary                pgtype.Numeric `json:"salary"`
+	EmergencyContactName  *string        `json:"emergencyContactName"`
+	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
+	ProfileDescription    *string        `json:"profileDescription"`
+	IsActive              bool           `json:"isActive"`
+	CreatedAt             time.Time      `json:"createdAt"`
+	UpdatedAt             time.Time      `json:"updatedAt"`
+	PositionTitle         *string        `json:"positionTitle"`
+}
+
+func (q *Queries) GetDirectReports(ctx context.Context, arg GetDirectReportsParams) ([]GetDirectReportsRow, error) {
+	rows, err := q.db.Query(ctx, getDirectReports, arg.TenantID, arg.ReportsTo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetDirectReportsRow{}
+	for rows.Next() {
+		var i GetDirectReportsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.FirstName,
+			&i.LastName,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.HireDate,
+			&i.TerminationDate,
+			&i.PositionID,
+			&i.DepartmentID,
+			&i.ReportsTo,
+			&i.Salary,
+			&i.EmergencyContactName,
+			&i.EmergencyContactPhone,
+			&i.ProfileDescription,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PositionTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getEmployeeById = `-- name: GetEmployeeById :one
-SELECT id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at FROM employees 
+SELECT id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at FROM employees 
 WHERE id = $1 AND tenant_id = $2 
 LIMIT 1
 `
@@ -363,6 +543,7 @@ func (q *Queries) GetEmployeeById(ctx context.Context, arg GetEmployeeByIdParams
 		&i.TerminationDate,
 		&i.PositionID,
 		&i.DepartmentID,
+		&i.ReportsTo,
 		&i.Salary,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
@@ -375,7 +556,7 @@ func (q *Queries) GetEmployeeById(ctx context.Context, arg GetEmployeeByIdParams
 }
 
 const getEmployeeByUserID = `-- name: GetEmployeeByUserID :one
-SELECT id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at FROM employees 
+SELECT id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at FROM employees 
 WHERE user_id = $1 AND tenant_id = $2 AND is_active = TRUE
 `
 
@@ -400,6 +581,7 @@ func (q *Queries) GetEmployeeByUserID(ctx context.Context, arg GetEmployeeByUser
 		&i.TerminationDate,
 		&i.PositionID,
 		&i.DepartmentID,
+		&i.ReportsTo,
 		&i.Salary,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
@@ -407,6 +589,158 @@ func (q *Queries) GetEmployeeByUserID(ctx context.Context, arg GetEmployeeByUser
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getEmployeeHierarchy = `-- name: GetEmployeeHierarchy :many
+
+WITH RECURSIVE hierarchy AS (
+    -- Base: Get all employees with no manager (top level)
+    SELECT 
+        e.id,
+        e.reports_to,
+        e.first_name,
+        e.last_name,
+        p.title as position_title,
+        0 as hierarchy_level,
+        ARRAY[e.id] as path
+    FROM employees e
+    LEFT JOIN positions p ON p.id = e.position_id
+    WHERE e.tenant_id = $1 
+      AND e.reports_to IS NULL
+      AND e.is_active = TRUE
+    
+    UNION ALL
+    
+    -- Recursive: Get subordinates
+    SELECT 
+        e.id,
+        e.reports_to,
+        e.first_name,
+        e.last_name,
+        p.title as position_title,
+        h.hierarchy_level + 1,
+        h.path || e.id
+    FROM employees e
+    JOIN hierarchy h ON e.reports_to = h.id
+    LEFT JOIN positions p ON p.id = e.position_id
+    WHERE e.tenant_id = $1
+      AND e.is_active = TRUE
+      AND NOT e.id = ANY(h.path)
+)
+SELECT id, reports_to, first_name, last_name, position_title, hierarchy_level, path FROM hierarchy ORDER BY path
+`
+
+type GetEmployeeHierarchyRow struct {
+	ID             uuid.UUID   `json:"id"`
+	ReportsTo      *uuid.UUID  `json:"reportsTo"`
+	FirstName      string      `json:"firstName"`
+	LastName       string      `json:"lastName"`
+	PositionTitle  *string     `json:"positionTitle"`
+	HierarchyLevel int32       `json:"hierarchyLevel"`
+	Path           interface{} `json:"path"`
+}
+
+// ============ EMPLOYEE Reporting Tree QUERIES ============
+func (q *Queries) GetEmployeeHierarchy(ctx context.Context, tenantID uuid.UUID) ([]GetEmployeeHierarchyRow, error) {
+	rows, err := q.db.Query(ctx, getEmployeeHierarchy, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetEmployeeHierarchyRow{}
+	for rows.Next() {
+		var i GetEmployeeHierarchyRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReportsTo,
+			&i.FirstName,
+			&i.LastName,
+			&i.PositionTitle,
+			&i.HierarchyLevel,
+			&i.Path,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getEmployeeWithManager = `-- name: GetEmployeeWithManager :one
+SELECT 
+    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
+    m.first_name as manager_first_name,
+    m.last_name as manager_last_name,
+    p.title as position_title
+FROM employees e
+LEFT JOIN employees m ON m.id = e.reports_to
+LEFT JOIN positions p ON p.id = e.position_id
+WHERE e.id = $1 AND e.tenant_id = $2
+`
+
+type GetEmployeeWithManagerParams struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenantId"`
+}
+
+type GetEmployeeWithManagerRow struct {
+	ID                    uuid.UUID      `json:"id"`
+	TenantID              uuid.UUID      `json:"tenantId"`
+	UserID                *uuid.UUID     `json:"userId"`
+	FirstName             string         `json:"firstName"`
+	LastName              string         `json:"lastName"`
+	Email                 string         `json:"email"`
+	Phone                 *string        `json:"phone"`
+	Address               *string        `json:"address"`
+	HireDate              time.Time      `json:"hireDate"`
+	TerminationDate       *time.Time     `json:"terminationDate"`
+	PositionID            uuid.UUID      `json:"positionId"`
+	DepartmentID          uuid.UUID      `json:"departmentId"`
+	ReportsTo             *uuid.UUID     `json:"reportsTo"`
+	Salary                pgtype.Numeric `json:"salary"`
+	EmergencyContactName  *string        `json:"emergencyContactName"`
+	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
+	ProfileDescription    *string        `json:"profileDescription"`
+	IsActive              bool           `json:"isActive"`
+	CreatedAt             time.Time      `json:"createdAt"`
+	UpdatedAt             time.Time      `json:"updatedAt"`
+	ManagerFirstName      *string        `json:"managerFirstName"`
+	ManagerLastName       *string        `json:"managerLastName"`
+	PositionTitle         *string        `json:"positionTitle"`
+}
+
+func (q *Queries) GetEmployeeWithManager(ctx context.Context, arg GetEmployeeWithManagerParams) (GetEmployeeWithManagerRow, error) {
+	row := q.db.QueryRow(ctx, getEmployeeWithManager, arg.ID, arg.TenantID)
+	var i GetEmployeeWithManagerRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.HireDate,
+		&i.TerminationDate,
+		&i.PositionID,
+		&i.DepartmentID,
+		&i.ReportsTo,
+		&i.Salary,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
+		&i.ProfileDescription,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ManagerFirstName,
+		&i.ManagerLastName,
+		&i.PositionTitle,
 	)
 	return i, err
 }
@@ -438,11 +772,244 @@ func (q *Queries) GetPosition(ctx context.Context, arg GetPositionParams) (Posit
 	return i, err
 }
 
+const getSupportDepartmentByCategory = `-- name: GetSupportDepartmentByCategory :one
+SELECT id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at FROM departments 
+WHERE tenant_id = $1 
+  AND department_type = 'support'
+  AND name ILIKE '%' || $2 || '%'
+  AND is_active = TRUE
+LIMIT 1
+`
+
+type GetSupportDepartmentByCategoryParams struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	Category *string   `json:"category"`
+}
+
+func (q *Queries) GetSupportDepartmentByCategory(ctx context.Context, arg GetSupportDepartmentByCategoryParams) (Department, error) {
+	row := q.db.QueryRow(ctx, getSupportDepartmentByCategory, arg.TenantID, arg.Category)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.DepartmentType,
+		&i.IsActive,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getSupportDepartments = `-- name: GetSupportDepartments :many
+              
+              
+
+
+SELECT id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at FROM departments 
+WHERE tenant_id = $1 
+  AND department_type = 'support'
+  AND is_active = TRUE
+ORDER BY name
+`
+
+// -- name: IsDescendant :one
+// SELECT EXISTS (
+//
+//	SELECT 1
+//	FROM employees e
+//	WHERE e.id = $1
+//	  AND e.id IN (
+//	      WITH RECURSIVE ancestors AS (
+//	          SELECT id, reports_to
+//	          FROM employees
+//	          WHERE id = $2
+//	          UNION ALL
+//	          SELECT e.id, e.reports_to
+//	          FROM employees e
+//	          JOIN ancestors ON e.id = ancestors.reports_to
+//	      )
+//	      SELECT id FROM ancestors
+//	  )
+//
+// ) AS is_ancestor;
+// ============ Support Chat QUERIES ============
+func (q *Queries) GetSupportDepartments(ctx context.Context, tenantID uuid.UUID) ([]Department, error) {
+	rows, err := q.db.Query(ctx, getSupportDepartments, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Department{}
+	for rows.Next() {
+		var i Department
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Description,
+			&i.DepartmentType,
+			&i.IsActive,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSupportTeamMembers = `-- name: GetSupportTeamMembers :many
+SELECT e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at
+FROM employees e
+WHERE e.tenant_id = $1 
+  AND e.department_id = $2
+  AND e.is_active = TRUE
+ORDER BY e.first_name, e.last_name
+`
+
+type GetSupportTeamMembersParams struct {
+	TenantID     uuid.UUID `json:"tenantId"`
+	DepartmentID uuid.UUID `json:"departmentId"`
+}
+
+func (q *Queries) GetSupportTeamMembers(ctx context.Context, arg GetSupportTeamMembersParams) ([]Employee, error) {
+	rows, err := q.db.Query(ctx, getSupportTeamMembers, arg.TenantID, arg.DepartmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Employee{}
+	for rows.Next() {
+		var i Employee
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.FirstName,
+			&i.LastName,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.HireDate,
+			&i.TerminationDate,
+			&i.PositionID,
+			&i.DepartmentID,
+			&i.ReportsTo,
+			&i.Salary,
+			&i.EmergencyContactName,
+			&i.EmergencyContactPhone,
+			&i.ProfileDescription,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUnassignedEmployees = `-- name: GetUnassignedEmployees :many
+SELECT 
+    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
+    p.title as position_title
+FROM employees e
+LEFT JOIN positions p ON p.id = e.position_id
+WHERE e.tenant_id = $1 
+  AND e.reports_to IS NULL
+  AND e.is_active = TRUE
+  AND e.id != $2
+ORDER BY e.first_name, e.last_name
+`
+
+type GetUnassignedEmployeesParams struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	ID       uuid.UUID `json:"id"`
+}
+
+type GetUnassignedEmployeesRow struct {
+	ID                    uuid.UUID      `json:"id"`
+	TenantID              uuid.UUID      `json:"tenantId"`
+	UserID                *uuid.UUID     `json:"userId"`
+	FirstName             string         `json:"firstName"`
+	LastName              string         `json:"lastName"`
+	Email                 string         `json:"email"`
+	Phone                 *string        `json:"phone"`
+	Address               *string        `json:"address"`
+	HireDate              time.Time      `json:"hireDate"`
+	TerminationDate       *time.Time     `json:"terminationDate"`
+	PositionID            uuid.UUID      `json:"positionId"`
+	DepartmentID          uuid.UUID      `json:"departmentId"`
+	ReportsTo             *uuid.UUID     `json:"reportsTo"`
+	Salary                pgtype.Numeric `json:"salary"`
+	EmergencyContactName  *string        `json:"emergencyContactName"`
+	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
+	ProfileDescription    *string        `json:"profileDescription"`
+	IsActive              bool           `json:"isActive"`
+	CreatedAt             time.Time      `json:"createdAt"`
+	UpdatedAt             time.Time      `json:"updatedAt"`
+	PositionTitle         *string        `json:"positionTitle"`
+}
+
+func (q *Queries) GetUnassignedEmployees(ctx context.Context, arg GetUnassignedEmployeesParams) ([]GetUnassignedEmployeesRow, error) {
+	rows, err := q.db.Query(ctx, getUnassignedEmployees, arg.TenantID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUnassignedEmployeesRow{}
+	for rows.Next() {
+		var i GetUnassignedEmployeesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.FirstName,
+			&i.LastName,
+			&i.Email,
+			&i.Phone,
+			&i.Address,
+			&i.HireDate,
+			&i.TerminationDate,
+			&i.PositionID,
+			&i.DepartmentID,
+			&i.ReportsTo,
+			&i.Salary,
+			&i.EmergencyContactName,
+			&i.EmergencyContactPhone,
+			&i.ProfileDescription,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PositionTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const linkUserToEmployee = `-- name: LinkUserToEmployee :one
 UPDATE employees 
 SET user_id = $2, updated_at = NOW()
 WHERE id = $1 AND tenant_id = $3 AND user_id IS NULL
-RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
+RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
 `
 
 type LinkUserToEmployeeParams struct {
@@ -467,6 +1034,7 @@ func (q *Queries) LinkUserToEmployee(ctx context.Context, arg LinkUserToEmployee
 		&i.TerminationDate,
 		&i.PositionID,
 		&i.DepartmentID,
+		&i.ReportsTo,
 		&i.Salary,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
@@ -480,9 +1048,9 @@ func (q *Queries) LinkUserToEmployee(ctx context.Context, arg LinkUserToEmployee
 
 const listDepartments = `-- name: ListDepartments :many
 
-SELECT id, tenant_id, name, description, manager_id, is_active, created_at, updated_at FROM departments 
+SELECT id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at FROM departments 
 WHERE tenant_id = $1 AND is_active = TRUE
-ORDER BY name ASC
+ORDER BY created_at DESC, name ASC
 `
 
 // ============ DEPARTMENT QUERIES ============
@@ -500,8 +1068,9 @@ func (q *Queries) ListDepartments(ctx context.Context, tenantID uuid.UUID) ([]De
 			&i.TenantID,
 			&i.Name,
 			&i.Description,
-			&i.ManagerID,
+			&i.DepartmentType,
 			&i.IsActive,
+			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -517,7 +1086,7 @@ func (q *Queries) ListDepartments(ctx context.Context, tenantID uuid.UUID) ([]De
 
 const listEmployees = `-- name: ListEmployees :many
 
-SELECT id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at FROM employees 
+SELECT id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at FROM employees 
 WHERE tenant_id = $1 AND is_active = TRUE
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -552,6 +1121,7 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 			&i.TerminationDate,
 			&i.PositionID,
 			&i.DepartmentID,
+			&i.ReportsTo,
 			&i.Salary,
 			&i.EmergencyContactName,
 			&i.EmergencyContactPhone,
@@ -572,7 +1142,7 @@ func (q *Queries) ListEmployees(ctx context.Context, arg ListEmployeesParams) ([
 
 const listEmployeesEligibleForUserCreation = `-- name: ListEmployeesEligibleForUserCreation :many
 
-SELECT e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at 
+SELECT e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at 
 FROM employees e
 LEFT JOIN users u ON e.user_id = u.id
 WHERE e.tenant_id = $1 
@@ -604,6 +1174,7 @@ func (q *Queries) ListEmployeesEligibleForUserCreation(ctx context.Context, tena
 			&i.TerminationDate,
 			&i.PositionID,
 			&i.DepartmentID,
+			&i.ReportsTo,
 			&i.Salary,
 			&i.EmergencyContactName,
 			&i.EmergencyContactPhone,
@@ -624,7 +1195,7 @@ func (q *Queries) ListEmployeesEligibleForUserCreation(ctx context.Context, tena
 
 const listEmployeesWithUserStatus = `-- name: ListEmployeesWithUserStatus :many
 SELECT 
-    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
+    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
     CASE WHEN e.user_id IS NOT NULL THEN TRUE ELSE FALSE END as has_user_account,
     u.username as user_username,
     u.email as user_email,
@@ -649,6 +1220,7 @@ type ListEmployeesWithUserStatusRow struct {
 	TerminationDate       *time.Time     `json:"terminationDate"`
 	PositionID            uuid.UUID      `json:"positionId"`
 	DepartmentID          uuid.UUID      `json:"departmentId"`
+	ReportsTo             *uuid.UUID     `json:"reportsTo"`
 	Salary                pgtype.Numeric `json:"salary"`
 	EmergencyContactName  *string        `json:"emergencyContactName"`
 	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
@@ -685,6 +1257,7 @@ func (q *Queries) ListEmployeesWithUserStatus(ctx context.Context, tenantID uuid
 			&i.TerminationDate,
 			&i.PositionID,
 			&i.DepartmentID,
+			&i.ReportsTo,
 			&i.Salary,
 			&i.EmergencyContactName,
 			&i.EmergencyContactPhone,
@@ -748,7 +1321,7 @@ func (q *Queries) ListPositions(ctx context.Context, tenantID uuid.UUID) ([]Posi
 
 const searchEmployees = `-- name: SearchEmployees :many
 SELECT 
-    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
+    e.id, e.tenant_id, e.user_id, e.first_name, e.last_name, e.email, e.phone, e.address, e.hire_date, e.termination_date, e.position_id, e.department_id, e.reports_to, e.salary, e.emergency_contact_name, e.emergency_contact_phone, e.profile_description, e.is_active, e.created_at, e.updated_at,
     d.name as department_name,
     p.title as position_title
 FROM employees e
@@ -800,6 +1373,7 @@ type SearchEmployeesRow struct {
 	TerminationDate       *time.Time     `json:"terminationDate"`
 	PositionID            uuid.UUID      `json:"positionId"`
 	DepartmentID          uuid.UUID      `json:"departmentId"`
+	ReportsTo             *uuid.UUID     `json:"reportsTo"`
 	Salary                pgtype.Numeric `json:"salary"`
 	EmergencyContactName  *string        `json:"emergencyContactName"`
 	EmergencyContactPhone *string        `json:"emergencyContactPhone"`
@@ -843,6 +1417,7 @@ func (q *Queries) SearchEmployees(ctx context.Context, arg SearchEmployeesParams
 			&i.TerminationDate,
 			&i.PositionID,
 			&i.DepartmentID,
+			&i.ReportsTo,
 			&i.Salary,
 			&i.EmergencyContactName,
 			&i.EmergencyContactPhone,
@@ -888,7 +1463,7 @@ SET
     termination_date = $2,
     updated_at = NOW()
 WHERE id = $1 AND tenant_id = $3
-RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
+RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
 `
 
 type SoftDeleteEmployeeParams struct {
@@ -913,6 +1488,7 @@ func (q *Queries) SoftDeleteEmployee(ctx context.Context, arg SoftDeleteEmployee
 		&i.TerminationDate,
 		&i.PositionID,
 		&i.DepartmentID,
+		&i.ReportsTo,
 		&i.Salary,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
@@ -965,7 +1541,7 @@ SET
     description = $3,
     updated_at = NOW()
 WHERE id = $1 AND tenant_id = $4
-RETURNING id, tenant_id, name, description, manager_id, is_active, created_at, updated_at
+RETURNING id, tenant_id, name, description, department_type, is_active, is_system, created_at, updated_at
 `
 
 type UpdateDepartmentParams struct {
@@ -988,8 +1564,9 @@ func (q *Queries) UpdateDepartment(ctx context.Context, arg UpdateDepartmentPara
 		&i.TenantID,
 		&i.Name,
 		&i.Description,
-		&i.ManagerID,
+		&i.DepartmentType,
 		&i.IsActive,
+		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1016,7 +1593,7 @@ SET
     is_active = $16,
     updated_at = NOW()
 WHERE id = $1 AND tenant_id = $17
-RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
+RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
 `
 
 type UpdateEmployeeParams struct {
@@ -1073,6 +1650,50 @@ func (q *Queries) UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) 
 		&i.TerminationDate,
 		&i.PositionID,
 		&i.DepartmentID,
+		&i.ReportsTo,
+		&i.Salary,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
+		&i.ProfileDescription,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateEmployeeReportsTo = `-- name: UpdateEmployeeReportsTo :one
+UPDATE employees 
+SET 
+    reports_to = $3,
+    updated_at = NOW()
+WHERE id = $1 AND tenant_id = $2
+RETURNING id, tenant_id, user_id, first_name, last_name, email, phone, address, hire_date, termination_date, position_id, department_id, reports_to, salary, emergency_contact_name, emergency_contact_phone, profile_description, is_active, created_at, updated_at
+`
+
+type UpdateEmployeeReportsToParams struct {
+	ID        uuid.UUID  `json:"id"`
+	TenantID  uuid.UUID  `json:"tenantId"`
+	ReportsTo *uuid.UUID `json:"reportsTo"`
+}
+
+func (q *Queries) UpdateEmployeeReportsTo(ctx context.Context, arg UpdateEmployeeReportsToParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, updateEmployeeReportsTo, arg.ID, arg.TenantID, arg.ReportsTo)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.Phone,
+		&i.Address,
+		&i.HireDate,
+		&i.TerminationDate,
+		&i.PositionID,
+		&i.DepartmentID,
+		&i.ReportsTo,
 		&i.Salary,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
