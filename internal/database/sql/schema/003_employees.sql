@@ -1,6 +1,6 @@
 -- Create departments table first (since employees references it)
 CREATE TABLE departments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
@@ -17,7 +17,7 @@ CREATE INDEX idx_departments_tenant ON departments(tenant_id);
 
 -- Create positions table
 CREATE TABLE positions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
@@ -34,7 +34,7 @@ CREATE INDEX idx_positions_tenant ON positions(tenant_id);
 
 -- Create employees table
 CREATE TABLE employees (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     user_id UUID UNIQUE REFERENCES users(id) ON DELETE SET NULL,
     first_name TEXT NOT NULL,

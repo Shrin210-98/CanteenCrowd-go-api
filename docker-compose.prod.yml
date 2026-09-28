@@ -65,10 +65,21 @@ services:
       timeout: 5s
       retries: 3
 
-  golang-migrate:
-    image: migrate/migrate:v4.18.1
+  # golang-migrate:
+  #   image: migrate/migrate:v4.18.1
+  #   volumes:
+  #     - ./migrations:/migrations
+  #   networks:
+  #     - api-network
+  #   profiles:
+  #     - tools
+
+  atlas:
+    image: arigaio/atlas:1.3.0 
     volumes:
-      - ./migrations:/migrations
+      - .:/src
+      - ~/.atlas:/root/.atlas  
+    working_dir: /src
     networks:
       - api-network
     profiles:

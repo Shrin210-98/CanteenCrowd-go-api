@@ -5,11 +5,17 @@ ifneq (,$(wildcard ./.env))
 endif
 
 # Variables
-DATABASE_URL := postgres://$(DB_USERNAME):$(DB_PASSWORD)@psql_bp:5432/$(DB_DATABASE)?sslmode=disable
-PROD_DATABASE_URL := postgres://$(DB_USERNAME):$(DB_PASSWORD)@$(DB_HOST):5432/$(DB_DATABASE)?sslmode=$(DB_SSLMODE)
-COMPOSE := docker compose
-COMPOSE_PROD := docker compose -f docker-compose.prod.yml
-MIGRATE := $(COMPOSE) --profile tools run --rm golang-migrate
+DATABASE_URL       := postgres://$(DB_USERNAME):$(DB_PASSWORD)@psql_bp:5432/$(DB_DATABASE)?sslmode=disable
+PROD_DATABASE_URL  := postgres://$(DB_USERNAME):$(DB_PASSWORD)@$(DB_HOST):5432/$(DB_DATABASE)?sslmode=$(DB_SSLMODE)
+COMPOSE            := docker compose
+COMPOSE_PROD       := docker compose -f docker-compose.prod.yml
+
+# Atlas
+MIGRATIONS_DIR := file:///src/migrations
+SCHEMA_DIR     := file:///src/internal/database/sql/schema
+DEV_DB_URL     := postgres://$(DB_USERNAME):$(DB_PASSWORD)@psql_bp:5432/atlas_dev?sslmode=disable
+ATLAS          := $(COMPOSE) --profile tools run --rm atlas
+ATLAS_PROD     := $(COMPOSE_PROD) --profile tools run --rm atlas
 
 # Build and run
 build: ## Build the application
@@ -25,6 +31,9 @@ watch: ## Run with hot reload
 # Development
 dev: ## Start development environment
 	@$(COMPOSE) up --build
+
+dev-build: ## Force rebuild development environment
+	@$(COMPOSE) up --build -d
 
 dev-down: ## Stop development environment
 	@$(COMPOSE) down
@@ -49,7 +58,7 @@ db-shell: ## Open development database shell
 db-reset: ## Reset development database (drops all data)
 	@echo "Resetting database..."
 	@$(COMPOSE) exec psql_bp psql -U $(DB_USERNAME) -d $(DB_DATABASE) -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-	@$(MIGRATE) -path /migrations -database "$(DATABASE_URL)" up
+	@$(MAKE) migrate-up
 	@echo "Database reset complete"
 
 db-backup: ## Backup development database
@@ -57,33 +66,94 @@ db-backup: ## Backup development database
 	@$(COMPOSE) exec -T psql_bp pg_dump -U $(DB_USERNAME) -d $(DB_DATABASE) > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "Backup created"
 
-# Migrations (Development)
-migrate-create: ## Create new migration
-	@read -p "Migration name: " name; \
-	$(MIGRATE) create -ext sql -dir /migrations -seq $$name
+db-schema-dump: ## Dump current DB schema to db/schema/_current.sql
+	@mkdir -p db/schema
+	@$(COMPOSE) exec -T psql_bp pg_dump \
+		--schema-only --no-owner --no-privileges \
+		-U $(DB_USERNAME) $(DB_DATABASE) > db/schema/_current.sql
+	@echo "Schema dumped to db/schema/_current.sql"
+
+# Migrations (Development) — Atlas
+migrate-diff: ## Generate migration from db/schema changes (usage: make migrate-diff NAME=add_notes)
+	@if [ -z "$(NAME)" ]; then \
+		echo "Usage: make migrate-diff NAME=add_notes"; \
+		exit 1; \
+	fi
+	@echo "Generating migration: $(NAME)"
+	@$(ATLAS) migrate diff $(NAME) \
+		--dir $(MIGRATIONS_DIR) \
+		--to $(SCHEMA_DIR) \
+		--dev-url "$(DEV_DB_URL)"
+	@echo "Migration generated in migrations/"
 
 migrate-up: ## Apply migrations to development
 	@echo "Applying migrations..."
-	@$(MIGRATE) -path /migrations -database "$(DATABASE_URL)" up
+	@$(ATLAS) migrate apply \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(DATABASE_URL)" \
+		--revisions-schema public
 
 migrate-down: ## Rollback last migration in development
 	@echo "Rolling back last migration..."
-	@$(MIGRATE) -path /migrations -database "$(DATABASE_URL)" down 1
+	@$(ATLAS) migrate down \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(DATABASE_URL)" \
+		--revisions-schema public \
+		--to-version -1
 
-migrate-version: ## Show current migration version
-	@$(MIGRATE) -path /migrations -database "$(DATABASE_URL)" version
+migrate-version: ## Show current migration status
+	@$(ATLAS) migrate status \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(DATABASE_URL)"\
+		--revisions-schema public
 
-# Migrations (Production)
+migrate-validate: ## Validate migrations (atlas.sum integrity)
+	@$(ATLAS) migrate validate \
+		--dir $(MIGRATIONS_DIR) \
+		--dev-url $(DEV_DB_URL)
+
+migrate-lint: ## Lint latest migration
+	@$(ATLAS) migrate lint \
+		--dir $(MIGRATIONS_DIR) \
+		--dev-url $(DEV_DB_URL) \
+		--latest 1
+
+migrate-hash: ## Regenerate atlas.sum
+	@$(ATLAS) migrate hash --dir $(MIGRATIONS_DIR)
+
+migrate-apply-version: ## Apply to specific version (usage: make migrate-apply-version VERSION=20240101120000)
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make migrate-apply-version VERSION=20240101120000"; \
+		exit 1; \
+	fi
+	@$(ATLAS) migrate apply \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(DATABASE_URL)" \
+		--to-version $(VERSION)
+
+# Migrations (Production) — Atlas
 prod-migrate-up: ## Apply migrations to production
 	@echo "Applying migrations to production..."
-	@$(COMPOSE_PROD) run --rm golang-migrate -path /migrations -database "$(PROD_DATABASE_URL)" up
+	@$(ATLAS_PROD) migrate apply \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(PROD_DATABASE_URL)"
 
 prod-migrate-down: ## Rollback last migration in production
 	@echo "Rolling back production migration..."
-	@$(COMPOSE_PROD) run --rm golang-migrate -path /migrations -database "$(PROD_DATABASE_URL)" down 1
+	@$(ATLAS_PROD) migrate down \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(PROD_DATABASE_URL)" \
+		--to-version -1
 
-prod-migrate-version: ## Show production migration version
-	@$(COMPOSE_PROD) run --rm golang-migrate -path /migrations -database "$(PROD_DATABASE_URL)" version
+prod-migrate-version: ## Show production migration status
+	@$(ATLAS_PROD) migrate status \
+		--dir $(MIGRATIONS_DIR) \
+		--url "$(PROD_DATABASE_URL)"
+
+prod-migrate-validate: ## Validate migrations before prod deploy
+	@$(ATLAS_PROD) migrate validate \
+		--dir $(MIGRATIONS_DIR) \
+		--dev-url "$(DEV_DB_URL)"
 
 # Production database
 prod-db-shell: ## Open production database shell
@@ -95,8 +165,10 @@ prod-db-backup: ## Backup production database
 	@echo "Production backup created"
 
 # Code generation and testing
-sqlc: ## Generate SQL code
+sqlc: ## Generate SQL code from queries
+	@echo "Generating Go code from SQL queries..."
 	@docker run --rm -v "$(PWD):/src" -w /src sqlc/sqlc:1.27.0 generate
+	@echo "SQL code generation complete - check internal/database/"
 
 test: ## Run tests
 	@go test ./...
@@ -111,10 +183,12 @@ deploy: ## Deploy to production
 	@echo "Step 2: Building images"
 	@$(COMPOSE_PROD) build
 	@echo "Step 3: Backing up database"
-	@make prod-db-backup
-	@echo "Step 4: Running migrations"
-	@$(COMPOSE_PROD) run --rm golang-migrate -path /migrations -database "$(PROD_DATABASE_URL)" up
-	@echo "Step 5: Starting services"
+	@$(MAKE) prod-db-backup
+	@echo "Step 4: Validating migrations"
+	@$(MAKE) prod-migrate-validate
+	@echo "Step 5: Running migrations"
+	@$(MAKE) prod-migrate-up
+	@echo "Step 6: Starting services"
 	@$(COMPOSE_PROD) up -d
 	@echo "Deployment complete"
 
@@ -130,4 +204,11 @@ help: ## Show available commands
 
 .DEFAULT_GOAL := help
 
-.PHONY: build run watch dev dev-down dev-logs prod prod-down prod-logs db-shell db-reset db-backup migrate-create migrate-up migrate-down migrate-version prod-migrate-up prod-migrate-down prod-migrate-version prod-db-shell prod-db-backup sqlc test itest deploy clean logs help
+.PHONY: build run watch dev dev-build dev-down dev-logs \
+	prod prod-down prod-logs \
+	db-shell db-reset db-backup db-schema-dump \
+	migrate-diff migrate-up migrate-down migrate-version \
+	migrate-hash migrate-validate migrate-lint migrate-hash migrate-apply-version \
+	prod-migrate-up prod-migrate-down prod-migrate-version prod-migrate-validate \
+	prod-db-shell prod-db-backup \
+	sqlc test itest deploy clean logs help

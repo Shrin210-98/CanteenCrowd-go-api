@@ -14,7 +14,7 @@
 - **JWT**: golang-jwt/jwt/v5
 - **UUID**: github.com/google/uuid
 - **Validation**: github.com/go-playground/validator/v10
-- **Migrations**: golang-migrate
+- **Migrations**: Atlas
 - **Container**: Docker & Docker Compose
 
 ### Frontend
@@ -31,7 +31,7 @@
 - **Role-Based Access Control (RBAC)**: Users → Roles → Permissions with per-user overrides
 - **JWT Authentication**: Secure token-based authentication with tenant context
 - **Employee Management**: Complete CRUD operations for employees, departments, and positions
-- **User Management**: Staff and guest user creation with employee linking
+- **User Management**: External user creation and Staff user with employee linking
 - **Permission System**: Nested permission structure with role templates and custom overrides
 - **PostgreSQL 17**: Robust database with JSONB support for flexible permissions
 
@@ -126,7 +126,7 @@ User (Jane) → Role (Admin) → Permissions (all access)
   - Linked to employee record
   - Permissions based on assigned role
   
-- **guest**: External temporary access (no employeeId)
+- **external**: External temporary access (no employeeId)
   - Limited access
   - No employee link required
 

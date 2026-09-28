@@ -1,5 +1,5 @@
 CREATE TABLE tenants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     plan TEXT NOT NULL DEFAULT 'free',
@@ -11,7 +11,7 @@ CREATE TABLE tenants (
 
 -- Roles table - tenant-specific
 CREATE TABLE roles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
@@ -28,10 +28,10 @@ CREATE TABLE roles (
 CREATE INDEX idx_roles_tenant ON roles(tenant_id);
 
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,  -- Now NOT NULL for all users
-    username TEXT UNIQUE NOT NULL,
-    email TEXT UNIQUE NOT NULL,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
     password_hash TEXT NOT NULL,
     last_login TIMESTAMPTZ,
     login_attempts INT NOT NULL DEFAULT 0,
@@ -47,7 +47,7 @@ CREATE TABLE users (
         user_type IN (
             'tenant_owner',     -- the main account holder
             'staff',            -- internal staff
-            'guest'             -- external temporary access for contractors, clients etc.
+            'external'          -- external temporary access for contractors, clients etc.
         )
     ),
     role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
@@ -59,7 +59,6 @@ CREATE TABLE users (
     -- Foreign key to tenants table
     CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) 
         REFERENCES tenants(id) ON DELETE RESTRICT
-    -- Removed the check_tenant_id constraint
 );
 
 -- Create indexes for better performance
@@ -68,9 +67,17 @@ CREATE INDEX idx_users_tenant_type ON users(tenant_id, user_type);
 CREATE INDEX idx_users_email ON users(email) WHERE deleted_at IS NULL;
 CREATE INDEX idx_users_role_id ON users(role_id) WHERE deleted_at IS NULL;
 
+CREATE UNIQUE INDEX users_tenant_username_unique 
+ON users(tenant_id, username) 
+WHERE deleted_at IS NULL;
+
+CREATE UNIQUE INDEX users_tenant_email_unique 
+ON users(tenant_id, email) 
+WHERE deleted_at IS NULL;
+
 -- User profiles table
 CREATE TABLE user_profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL, 
     full_name TEXT,
@@ -88,7 +95,7 @@ CREATE INDEX idx_user_profiles_tenant ON user_profiles(tenant_id);
 
 -- User tokens table
 CREATE TABLE user_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
     token TEXT NOT NULL,
@@ -106,7 +113,7 @@ CREATE INDEX idx_user_tokens_token ON user_tokens(token) WHERE used_at IS NULL;
 
 -- Refresh tokens table
 CREATE TABLE refresh_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL,
     token TEXT NOT NULL UNIQUE,
@@ -143,7 +150,7 @@ EXECUTE FUNCTION update_updated_at_column();
 -- -- Multiple Tenants access to Users
 -- -- Add a user_tenants junction table for many-to-many relationship
 -- CREATE TABLE user_tenants (
---     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+--     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 --     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 --     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
 --     role_id UUID REFERENCES roles(id) ON DELETE SET NULL, -- Optional: role within this tenant
@@ -158,17 +165,3 @@ EXECUTE FUNCTION update_updated_at_column();
 -- CREATE INDEX idx_user_tenants_user ON user_tenants(user_id);
 -- CREATE INDEX idx_user_tenants_tenant ON user_tenants(tenant_id);
 
-
--- -- Audit Logging : Compliance, security auditing, debugging.
--- CREATE TABLE audit_logs (
---     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
---     tenant_id UUID NOT NULL REFERENCES tenants(id),
---     user_id UUID NOT NULL REFERENCES users(id),
---     action TEXT NOT NULL,  -- 'CREATE', 'UPDATE', 'DELETE', 'LOGIN'
---     resource_type TEXT NOT NULL, -- 'employee', 'department', 'user'
---     resource_id UUID NOT NULL,
---     changes JSONB, -- before/after values
---     ip_address INET,
---     user_agent TEXT,
---     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
--- );

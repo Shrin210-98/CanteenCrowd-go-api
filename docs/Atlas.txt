@@ -1,0 +1,254 @@
+HOW YOUR WORKFLOW CHANGES
+BEFORE — golang-migrate
+text
+1. Dev wants to add a column
+2. Write migration SQL by hand (up + down)
+3. Run migrate-up
+4. Update db/schema/ manually for sqlc
+5. Regenerate sqlc
+Two sources of truth: migrations + db/schema. Manual sync.
+
+AFTER — Atlas
+text
+1. Dev edits db/schema/*.sql (single source of truth)
+2. Atlas generates migration automatically
+3. Run migrate-up
+4. Regenerate sqlc (from same db/schema/)
+One source of truth: db/schema. Auto sync.
+
+
+DAY-TO-DAY WORKFLOW
+
+-- Adding a column
+# 1. Edit schema
+vim internal/database/sql/schema/005_requests.sql
+# Add: notes TEXT
+
+# 2. Generate migration
+make migrate-diff NAME=add_request_notes
+# Creates migrations/20260926120000_add_request_notes.sql
+
+# 3. Apply
+make migrate-up
+
+# 4. Regenerate Go code
+make sqlc
+
+# 5. Restart app
+make dev-build
+
+--Rolling back a bad migration
+
+# Roll back the last migration
+make migrate-down
+
+# Fix the schema file
+vim internal/database/sql/schema/005_requests.sql
+
+# Regenerate the migration (or fix it manually)
+make migrate-diff NAME=fix_bad_migration
+
+# Apply
+make migrate-up
+
+
+
+
+==========================================================================================
+SCHEMA + MIGRATION STACKS — FULL COMPARISON (WITH ICONS)
+==========================================================================================
+
+LEGEND:
+  ✅  Full support / Native / Excellent
+  🟢  Strong / Good / Recommended
+  🟡  Partial / OK / Depends
+  🟠  Weak / Limited / Risky
+  🔴  Poor / Missing / Not recommended
+  ⚠️   Caveat / Caution
+  ❌  Not applicable / No
+
+==========================================================================================
+| Feature                | Atlas + sqlc      | Atlas + GORM     | Ent              | sqlc + golang-migrate | sqlc              | NestJS + Prisma   | GORM            | Java Spring Boot  |
+|------------------------|-------------------|------------------|------------------|-----------------------|-------------------|-------------------|-----------------|-------------------|
+| Schema source          | ✅ SQL files      | 🟡 Go structs    | 🟢 Go schema     | 🟡 SQL files          | ✅ SQL files      | 🟢 Prisma file    | 🟡 Go structs   | 🟢 JPA entities   |
+| Migration tool         | ✅ Atlas          | ✅ Atlas         | 🟢 Atlas         | 🟡 golang-migrate     | 🔴 None (schema)  | 🟢 Prisma         | 🟠 AutoMigrate  | 🟢 Flyway/Liquibase|
+| Query layer            | ✅ sqlc           | 🟡 GORM          | 🟢 Ent           | ✅ sqlc               | ✅ sqlc           | 🟢 Prisma         | 🟡 GORM         | 🟢 JPA/Hibernate  |
+| Schema duplication     | ✅ None           | 🟠 Possible      | 🟠 Possible      | 🟠 Manual sync        | ✅ None           | ✅ None           | ✅ None         | 🟡 Possible       |
+| Type safety            | ✅ Excellent      | 🟢 Good          | ✅ Excellent     | ✅ Excellent          | ✅ Excellent      | ✅ Excellent      | 🟠 Runtime      | 🟢 Good           |
+| Query writing          | 🟢 Manual SQL     | 🟡 ORM chains    | 🟡 ORM chains    | 🟢 Manual SQL         | 🟢 Manual SQL     | 🟡 ORM chains     | 🟡 ORM chains   | 🟡 ORM chains     |
+| SQL visibility         | ✅ Full           | 🔴 Hidden        | 🟡 Hidden        | ✅ Full               | ✅ Full           | 🟡 Hidden         | 🔴 Hidden       | 🔴 Hidden         |
+| Migration control      | ✅ Full           | ✅ Full          | ✅ Full          | 🟡 Manual             | 🔴 N/A            | ✅ Full           | 🟠 Auto         | ✅ Full           |
+| Dangerous change lint  | ✅ Yes            | ✅ Yes           | ✅ Yes           | 🔴 No                 | 🔴 No             | 🔴 No             | 🔴 No           | 🟡 Partial        |
+| Checksums              | ✅ Yes            | ✅ Yes           | ✅ Yes           | 🔴 No                 | 🔴 No             | ✅ Yes            | 🔴 No           | ✅ Yes            |
+| Compile-time SQL check | ✅ Yes            | 🔴 No            | 🔴 No            | ✅ Yes                | ✅ Yes            | 🔴 No             | 🔴 No           | 🔴 No             |
+| N+1 query risk         | ✅ None           | 🔴 High          | 🟡 Medium        | ✅ None               | ✅ None           | 🟡 Medium         | 🔴 High         | 🟡 Medium         |
+| Magic behavior         | ✅ None           | 🔴 High          | 🟡 Medium        | ✅ None               | ✅ None           | 🟡 Medium         | 🔴 High         | 🔴 High           |
+| Hard to optimize       | ✅ No             | 🔴 Yes           | 🟡 Sometimes     | ✅ No                 | ✅ No             | 🟡 Sometimes      | 🔴 Yes          | 🟡 Sometimes      |
+| Ambiguous SQL          | ✅ No             | 🔴 Yes           | 🟡 Sometimes     | ✅ No                 | ✅ No             | 🟡 Sometimes      | 🔴 Yes          | 🟡 Sometimes      |
+| Performance            | ✅ Native         | 🟠 Overhead      | 🟠 Overhead      | ✅ Native             | ✅ Native         | 🟠 Overhead       | 🟠 Overhead     | 🔴 Heaviest       |
+| Runtime dependencies   | ✅ None           | 🟡 GORM          | 🟡 Ent           | ✅ None               | ✅ None           | 🟡 Prisma Client  | 🟡 GORM         | 🔴 JVM + Spring   |
+| Memory footprint       | 🟢 ~10–25 MB      | 🟡 ~15–40 MB     | 🟡 ~20–50 MB     | 🟢 ~10–25 MB          | 🟢 ~10–25 MB      | 🔴 ~120–250 MB    | 🟡 ~15–40 MB    | 🔴 ~200–500 MB    |
+| Container/image size   | 🟢 ~10–25 MB      | 🟢 ~15–30 MB     | 🟡 ~20–40 MB     | 🟢 ~10–25 MB          | 🟢 ~10–25 MB      | 🔴 ~200–350 MB    | 🟢 ~15–30 MB    | 🔴 ~250–450 MB    |
+| Multi-DB support       | ✅ Yes            | ✅ Yes           | 🟡 Partial       | ✅ Yes                | 🟢 N/A (schema)   | ✅ Yes            | ✅ Yes          | ✅ Yes            |
+| Team onboarding        | 🔴 Steep          | 🟢 Easy          | 🟡 Medium        | 🟢 Easy               | 🔴 Steep (SQL)    | 🟢 Easy           | 🟢 Easy         | 🔴 Steep          |
+| Ecosystem maturity     | 🟢 Growing        | 🟢 Mature        | 🟢 Mature        | ✅ Mature             | ✅ Mature         | ✅ Very Mature    | 🟢 Mature       | ✅ Very Mature    |
+| Modern trend           | ✅ Growing        | 🟡 Legacy-ish    | 🟢 Growing       | 🟢 Stable             | 🟢 Growing        | ✅ Very Popular   | 🟡 Legacy       | 🟡 Enterprise     |
+| Community size         | 🟢 Medium         | ✅ Large         | 🟢 Medium        | ✅ Large              | 🟢 Medium         | ✅ Very Large     | ✅ Large        | ✅ Very Large     |
+| Vendor lock-in         | 🔴 Atlas Cloud nudge | 🟡 GORM + Atlas | 🟡 Ent + Atlas | 🟢 Low                | 🟢 Low            | 🔴 Prisma engine  | 🟡 GORM         | 🔴 Spring ecosystem|
+| Toolchain complexity   | 🔴 Two tools + HCL/SQL duality | 🟡 Two tools | 🟡 Two tools | 🟢 One tool          | 🟢 One tool       | 🟢 One tool       | 🟢 One tool     | 🟡 Many (Maven/Gradle)|
+| Language ecosystem     | 🔴 Go-only        | 🔴 Go-only       | 🔴 Go-only       | 🔴 Go-only            | 🔴 Go-only        | 🟡 TS/JS-only     | 🔴 Go-only      | 🔴 JVM-only       |
+| Cold start             | 🟢 <20 ms         | 🟢 <20 ms        | 🟢 <20 ms        | 🟢 <20 ms             | 🟢 <20 ms         | 🔴 500 ms–2 s     | 🟢 <20 ms       | 🔴 1–5 s          |
+| AWS Lambda fit         | ✅ Excellent      | ✅ Excellent     | ✅ Excellent     | ✅ Excellent          | ✅ Excellent      | 🔴 Poor           | ✅ Excellent    | 🔴 Poor           |
+| Dev velocity (CRUD)    | 🔴 Slowest        | 🟢 Fast          | 🟡 Medium        | 🔴 Slow               | 🔴 Slowest        | ✅ Fastest        | 🟢 Fast         | 🟡 Medium         |
+| Long-term maintainability | ✅ Excellent   | 🟡 Good          | 🟢 Good          | ✅ Excellent          | ✅ Excellent      | 🟢 Good           | 🟡 Good         | 🟡 Good           |
+| Learning curve (SQL)   | 🔴 Required       | 🟢 Optional      | 🟡 Optional      | 🔴 Required           | 🔴 Required       | 🟢 Optional       | 🟢 Optional     | 🟡 Optional       |
+| Migration rollback     | ✅ Full           | ✅ Full          | ✅ Full          | 🟡 Manual `down` SQL  | 🔴 N/A            | 🟡 Limited        | 🔴 None         | ✅ Full           |
+| CI/CD linting          | ✅ First-class    | ✅ First-class   | ✅ First-class   | 🔴 None               | 🔴 None           | 🔴 None           | 🔴 None         | 🟡 Partial        |
+| Ideal scale            | Very High         | Medium-High      | High             | Very High             | Very High         | Medium            | Medium          | Medium-High       |
+
+==========================================================================================
+N+1 QUERY PROBLEM EXPLAINED ⚠️
+==========================================================================================
+
+WHAT IT IS:
+  🔴 An ORM loads parent rows, then for EACH parent, runs a separate query
+  🔴 1 + N queries instead of 1-2.
+
+EXAMPLE (GORM):
+  users := db.Find(&users)          -- 1 query: SELECT * FROM users
+  for _, u := range users {
+      db.Find(&u.Requests)          -- N queries: one per user!
+  }
+  🔴 Total: 1 + 100 = 101 queries for 100 users
+
+EXAMPLE (sqlc):
+  -- name: GetUsersWithRequests :many
+  SELECT u.*, r.* FROM users u
+  LEFT JOIN requests r ON r.requester_id = u.id;
+  ✅ 1 query, always
+
+IMPACT:
+  🔴 100x slower at scale
+  🔴 Database load spikes
+  🔴 Hard to notice in dev (small data)
+  🔴 Symptoms appear only in production
+
+==========================================================================================
+MAGIC BEHAVIOR EXPLAINED 🔮
+==========================================================================================
+
+WHAT IT IS:
+  🟡 ORMs do things behind the scenes that aren't obvious from your code.
+
+EXAMPLES:
+  🔴 GORM auto-creates columns, indexes, foreign keys (silently)
+  🟡 Hibernate caches queries, auto-flushes on access
+  🟡 TypeORM has cascade behaviors triggered by relations
+  🟡 Prisma wraps transactions implicitly
+
+PROBLEMS:
+  🔴 Hard to predict exact SQL
+  🔴 Difficult to debug production issues
+  🔴 Performance surprises
+  🔴 Hidden lock contention
+  🔴 "Why is this slow?" → grep the ORM source
+
+==========================================================================================
+HARD TO OPTIMIZE EXPLAINED 🐌
+==========================================================================================
+
+WHY ORMs ARE HARD TO OPTIMIZE:
+  🔴 Query planner sees different SQL each time
+  🔴 ORM generates subqueries where a JOIN would work
+  🔴 Indexes may not match ORM-generated WHERE clauses
+  🔴 Eager loading forces you to load entire object graphs
+  🔴 Connection pools tuned for ORM, not your workload
+
+RESULTS:
+  🟠 Need query-specific overrides
+  🟠 Mixed ORM + raw SQL (worst of both)
+  🟠 Hard to explain to DBAs
+  🟠 Cannot use EXPLAIN ANALYZE meaningfully
+
+WHY SQLC IS EASY TO OPTIMIZE:
+  ✅ You write the SQL — you control the plan
+  ✅ EXPLAIN ANALYZE gives exact answers
+  ✅ Indexes match your WHERE clauses
+  ✅ No hidden subqueries
+
+==========================================================================================
+AMBIGUOUS GENERATED SQL EXPLAINED ❓
+==========================================================================================
+
+WHAT IT IS:
+  🔴 When you write ORM code, you're guessing at what SQL will run.
+
+EXAMPLE (GORM):
+  db.Preload("Requests").Find(&users)
+  ❓ What SQL runs?
+  ❓ SELECT * FROM users?
+  ❓ SELECT * FROM users WHERE ...?
+  ❓ With what indexes?
+  ❓ With what lock mode?
+
+YOU CANNOT KNOW without:
+  🔴 Turning on GORM's query logger
+  🔴 Reading GORM's source
+  🔴 Running and inspecting
+
+EXAMPLE (sqlc):
+  -- name: GetUsersWithRequests :many
+  SELECT u.*, r.* FROM users u
+  LEFT JOIN requests r ON r.requester_id = u.id
+  WHERE u.is_active = TRUE;
+  ✅ You wrote this. It runs this. Zero ambiguity.
+
+CONSEQUENCES:
+  🔴 Production bugs impossible to reproduce in dev
+  🔴 Slow queries appear without warning
+  🔴 Database indexes unused
+  🔴 Debugging becomes archaeology
+
+==========================================================================================
+WHY YOUR STACK (sqlc + Atlas) AVOIDS ALL OF THIS ✅
+==========================================================================================
+
+| Problem                | sqlc + Atlas | Why                                          |
+|------------------------|--------------|----------------------------------------------|
+| N+1 queries            | ✅ None      | You write JOINs explicitly                   |
+| Magic behavior         | ✅ None      | Everything explicit                          |
+| Hard to optimize       | ✅ None      | You own the SQL                              |
+| Ambiguous generated SQL| ✅ None      | You write the SQL                            |
+| Schema duplication     | ✅ None      | db/schema is the only source                 |
+| Migration drift        | ✅ None      | atlas.sum + checksums                        |
+| Silent data loss       | ✅ None      | Atlas warns before DROP COLUMN               |
+| Slow onboarding        | ✅ None      | Any SQL-literate dev can read the code       |
+| Debugging production   | ✅ Easy      | EXPLAIN works directly on your SQL           |
+| Cross-language         | ✅ Yes       | SQL is universal (Go, TS, Python, Rust...)   |
+
+==========================================================================================
+INDUSTRY TRENDS (2024-2026) 📈
+==========================================================================================
+
+MOVING AWAY FROM ORMs:
+  ✅ Uber's Go services: sqlc + migrations
+  ✅ GitHub internal tools: sqlc, sqlx
+  ✅ Modern startups: sqlc, Kysely, Drizzle
+  ✅ Databricks, PlanetScale: SQL-first
+
+STICKING WITH ORMs:
+  🟡 Enterprise Java: Hibernate + Flyway
+  🟡 Enterprise .NET: EF Core + migrations
+  🟢 Rapid prototypes: GORM, Django
+  🟢 Data-heavy Python: SQLAlchemy
+
+GROWING MIDDLE GROUND:
+  ✅ Prisma (TS) — best of both worlds
+  ✅ Drizzle (TS) — SQL-first with types
+  ✅ Kysely (TS) — typed query builder
+  ✅ sqlc (Go) — you're here
+
+The ORMs supported by Atlas exist for OTHER developers
+who are stuck with ORMs due to legacy or team decisions.
+
+You chose the better path. Stay on it. 🎯

@@ -31,3 +31,7 @@ main
 
 # OS X generated file
 .DS_Store
+
+tmp/
+backups/
+db/schema/_current.sql
