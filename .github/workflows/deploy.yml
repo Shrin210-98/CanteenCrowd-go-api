@@ -36,7 +36,7 @@ jobs:
           script: |
             cd /home/ec2-user/app
 
-            echo "📥 Pulling latest code..."
+            echo "Pulling latest code..."
             if [ -d ".git" ]; then
               git fetch origin main
               git reset --hard origin/main
@@ -44,13 +44,13 @@ jobs:
               git clone https://github.com/Shrin210-98/CanteenCrowd-go-api.git .
             fi
 
-            echo "🔧 Ensuring buildx is up to date..."
+            echo "Ensuring buildx is up to date..."
             mkdir -p ~/.docker/cli-plugins
             curl -SL https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 \
               -o ~/.docker/cli-plugins/docker-buildx
             chmod +x ~/.docker/cli-plugins/docker-buildx
 
-            echo "🔐 Setting up environment variables..."
+            echo "Setting up environment variables..."
             echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" > .env
             echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
@@ -67,16 +67,16 @@ jobs:
             docker compose -f docker-compose.prod.yml down
             docker compose -f docker-compose.prod.yml up -d --build
 
-            echo "🧹 Cleaning up old images..."
+            echo "Cleaning up old images..."
             docker image prune -f
 
-            echo "🔍 Checking deployment status..."
+            echo "Checking deployment status..."
             sleep 10
             if docker compose -f docker-compose.prod.yml ps | grep -q "unhealthy\|exited"; then
-              echo "❌ Deployment failed!"
+              echo "Deployment failed!"
               docker compose -f docker-compose.prod.yml logs --tail=50
               exit 1
             fi
 
-            echo "✅ Deployment successful!"
+            echo "Deployment successful!"
             docker compose -f docker-compose.prod.yml ps

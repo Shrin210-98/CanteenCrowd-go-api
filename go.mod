@@ -6,6 +6,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
+	github.com/gorilla/websocket v1.5.3
 )
 
 require (

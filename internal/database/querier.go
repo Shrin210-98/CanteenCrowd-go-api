@@ -80,18 +80,22 @@ type Querier interface {
 	GetDepartmentMembers(ctx context.Context, arg GetDepartmentMembersParams) ([]GetDepartmentMembersRow, error)
 	GetDepartmentRequestCounts(ctx context.Context, arg GetDepartmentRequestCountsParams) (GetDepartmentRequestCountsRow, error)
 	GetDepartmentRequests(ctx context.Context, arg GetDepartmentRequestsParams) ([]GetDepartmentRequestsRow, error)
+	GetDepartmentsByNames(ctx context.Context, arg GetDepartmentsByNamesParams) ([]GetDepartmentsByNamesRow, error)
 	GetDirectReports(ctx context.Context, arg GetDirectReportsParams) ([]GetDirectReportsRow, error)
 	GetEmployeeById(ctx context.Context, arg GetEmployeeByIdParams) (Employee, error)
 	GetEmployeeByUserID(ctx context.Context, arg GetEmployeeByUserIDParams) (Employee, error)
 	// ============ EMPLOYEE Reporting Tree QUERIES ============
 	GetEmployeeHierarchy(ctx context.Context, tenantID uuid.UUID) ([]GetEmployeeHierarchyRow, error)
 	GetEmployeeWithManager(ctx context.Context, arg GetEmployeeWithManagerParams) (GetEmployeeWithManagerRow, error)
+	GetExistingEmails(ctx context.Context, arg GetExistingEmailsParams) ([]string, error)
+	GetExistingUsernames(ctx context.Context, arg GetExistingUsernamesParams) ([]string, error)
 	GetMenuByID(ctx context.Context, id int32) (Menu, error)
 	GetMenuItemByID(ctx context.Context, id int32) (MenuItem, error)
 	GetMenuItemsByCategory(ctx context.Context, arg GetMenuItemsByCategoryParams) ([]MenuItem, error)
 	GetMenuItemsByIDs(ctx context.Context, dollar_1 []int32) ([]MenuItem, error)
 	GetNextRequestNumber(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	GetPosition(ctx context.Context, arg GetPositionParams) (Position, error)
+	GetPositionsByTitles(ctx context.Context, arg GetPositionsByTitlesParams) ([]GetPositionsByTitlesRow, error)
 	GetRefreshToken(ctx context.Context, token string) (RefreshToken, error)
 	GetRequestByID(ctx context.Context, arg GetRequestByIDParams) (GetRequestByIDRow, error)
 	GetRequestComments(ctx context.Context, requestID uuid.UUID) ([]GetRequestCommentsRow, error)
@@ -100,6 +104,7 @@ type Querier interface {
 	GetRequestsForManager(ctx context.Context, arg GetRequestsForManagerParams) ([]GetRequestsForManagerRow, error)
 	GetRoleByID(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleByTenantAndName(ctx context.Context, arg GetRoleByTenantAndNameParams) (Role, error)
+	GetRolesByNames(ctx context.Context, arg GetRolesByNamesParams) ([]GetRolesByNamesRow, error)
 	GetStaffUsersByTenant(ctx context.Context, tenantID uuid.UUID) ([]User, error)
 	GetSupportDepartmentByCategory(ctx context.Context, arg GetSupportDepartmentByCategoryParams) (Department, error)
 	// -- name: IsDescendant :one
@@ -174,6 +179,7 @@ type Querier interface {
 	MarkChatMessagesRead(ctx context.Context, arg MarkChatMessagesReadParams) error
 	MarkTokenUsed(ctx context.Context, id uuid.UUID) error
 	SearchEmployees(ctx context.Context, arg SearchEmployeesParams) ([]SearchEmployeesRow, error)
+	SetMustChangePassword(ctx context.Context, arg SetMustChangePasswordParams) error
 	SetPasswordResetToken(ctx context.Context, arg SetPasswordResetTokenParams) (User, error)
 	SoftDeleteDepartment(ctx context.Context, arg SoftDeleteDepartmentParams) error
 	SoftDeleteEmployee(ctx context.Context, arg SoftDeleteEmployeeParams) (Employee, error)
