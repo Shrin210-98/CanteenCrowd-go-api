@@ -101,8 +101,7 @@ func registerRoutesV1(mux *http.ServeMux, h *handlers.Handler) {
 		{"POST /settings/bulk-import/users", h.Settings.BulkImportUsers, "users.add"},
 		{"POST /settings/bulk-import/employees", h.Settings.BulkImportEmployees, "employees.add"},
 		{"GET  /settings/bulk-import/users/template", h.Settings.DownloadBulkUsersTemplate, "users.add"},
-		{"GET  /settings/bulk-import/employees/template", h.Settings.DownloadBulkEmployeesTemplate, "employees.add"},
-	}
+		{"GET  /settings/bulk-import/employees/template", h.Settings.DownloadBulkEmployeesTemplate, "employees.add"}}
 
 	// Register permission protected routes
 	for _, route := range permissionedRoutes {
