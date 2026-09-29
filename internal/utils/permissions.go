@@ -48,10 +48,7 @@ func FilterEnabledPermissions(permissions []PermissionNode) []FilteredPermission
 			continue
 		}
 
-		filtered := FilteredPermission{
-			Name:  perm.Name,
-			Label: perm.Label,
-		}
+		filtered := FilteredPermission{Name: perm.Name, Label: perm.Label}
 
 		// Process nested permissions
 		if len(perm.Nested) > 0 {
@@ -98,3 +95,23 @@ func FlattenPermissions(permissions []FilteredPermission) []string {
 	flatten(permissions, "")
 	return result
 }
+
+// // GetPermissionsFromContext retrieves permissions from request context
+// func GetPermissionsFromContext(r *http.Request) []string {
+// 	permissions, ok := r.Context().Value(constants.ContextKeyPermissions).([]string)
+// 	if !ok {
+// 		return []string{}
+// 	}
+// 	return permissions
+// }
+
+// // HasPermission checks if user has specific permission
+// func HasPermission(r *http.Request, permission string) bool {
+// 	permissions := GetPermissionsFromContext(r)
+// 	for _, p := range permissions {
+// 		if p == permission {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }

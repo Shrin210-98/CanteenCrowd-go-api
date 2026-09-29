@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"ccms.com/api/internal/constants"
@@ -156,8 +157,9 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var managementDeptID uuid.UUID
 	for _, dept := range constants.DefaultDepartments {
-		_, err := qtx.CreateDepartment(r.Context(), database.CreateDepartmentParams{
+		created, err := qtx.CreateDepartment(r.Context(), database.CreateDepartmentParams{
 			TenantID:       tenant.ID,
 			Name:           dept.Name,
 			Description:    &dept.Description,
@@ -168,6 +170,63 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 			utils.HandleDBError(w, err, "CreateDepartment")
 			return
 		}
+		if dept.Name == "Management" {
+			managementDeptID = created.ID
+		}
+	}
+
+	ownerPositionTitle := "Owner"
+	ownerPositionDescription := "Tenant owner position"
+	ownerPosition, err := qtx.CreatePosition(r.Context(), database.CreatePositionParams{
+		TenantID:    tenant.ID,
+		Title:       ownerPositionTitle,
+		Description: &ownerPositionDescription,
+	})
+	if err != nil {
+		utils.HandleDBError(w, err, "CreatePosition")
+		return
+	}
+
+	var firstName, lastName string
+	if req.FullName != "" {
+		parts := strings.SplitN(strings.TrimSpace(req.FullName), " ", 2)
+		firstName = parts[0]
+		if len(parts) > 1 {
+			lastName = parts[1]
+		}
+	} else {
+		firstName = req.Username
+	}
+
+	ownerEmployee, err := qtx.CreateEmployee(r.Context(), database.CreateEmployeeParams{
+		TenantID:     tenant.ID,
+		UserID:       &user.ID,
+		FirstName:    firstName,
+		LastName:     lastName,
+		Email:        req.Email,
+		HireDate:     time.Now(),
+		PositionID:   ownerPosition.ID,
+		DepartmentID: managementDeptID,
+		IsActive:     true,
+	})
+	if err != nil {
+		utils.HandleDBError(w, err, "CreateEmployee")
+		return
+	}
+
+	_, err = qtx.LinkUserToEmployee(r.Context(), database.LinkUserToEmployeeParams{
+		ID:       ownerEmployee.ID,
+		UserID:   &user.ID,
+		TenantID: tenant.ID,
+	})
+	if err != nil {
+		utils.HandleDBError(w, err, "LinkUserToEmployee")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		utils.HandleDBError(w, err, "CommitTransaction")
+		return
 	}
 
 	// Commit transaction

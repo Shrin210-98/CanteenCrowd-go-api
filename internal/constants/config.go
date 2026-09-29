@@ -37,7 +37,8 @@ var (
 		"http://127.0.0.1:5174",
 		"http://127.0.0.1:5173",
 		"http://localhost:3000",
-		"https://canteen-crowd-react-app.vercel.app/",
+		"https://www.ccms-suite.com",
+		"https://canteen-crowd-react-app.vercel.app",
 	}
 
 	// AllowedMethods for CORS
@@ -51,7 +52,8 @@ var (
 type ContextKey string
 
 const (
-	ContextKeyUserID   ContextKey = "userID"
-	ContextKeyTenantID ContextKey = "tenantID"
-	ContextKeyUserType ContextKey = "userType"
+	ContextKeyUserID      ContextKey = "userID"
+	ContextKeyTenantID    ContextKey = "tenantID"
+	ContextKeyUserType    ContextKey = "userType"
+	ContextKeyPermissions ContextKey = "permissions"
 )

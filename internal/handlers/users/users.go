@@ -36,16 +36,17 @@ type CreateUserRequest struct {
 	Username            string          `json:"username" validate:"required,min=3,max=50"`
 	Email               string          `json:"email" validate:"required,email"`
 	Password            string          `json:"password" validate:"required,min=8,max=100"`
-	UserType            string          `json:"userType" validate:"required,oneof=staff guest"`
+	UserType            string          `json:"userType" validate:"required,oneof=staff external"`
 	RoleID              *uuid.UUID      `json:"roleId,omitempty" validate:"omitempty,uuid"`
 	PermissionsOverride json.RawMessage `json:"permissionsOverride"`
 }
 
 type UpdateUserRequest struct {
-	Username *string    `json:"username,omitempty" validate:"omitempty,min=3,max=50"`
-	Email    *string    `json:"email,omitempty" validate:"omitempty,email"`
-	IsLocked *bool      `json:"isLocked,omitempty"`
-	RoleID   *uuid.UUID `json:"roleId,omitempty" validate:"omitempty,uuid"`
+	Username            *string         `json:"username,omitempty" validate:"omitempty,min=3,max=50"`
+	Email               *string         `json:"email,omitempty" validate:"omitempty,email"`
+	IsLocked            *bool           `json:"isLocked,omitempty"`
+	RoleID              *uuid.UUID      `json:"roleId,omitempty" validate:"omitempty,uuid"`
+	PermissionsOverride json.RawMessage `json:"permissionsOverride,omitempty"`
 }
 
 type UserResponse struct {
@@ -101,6 +102,8 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var employee *database.Employee
+
 	// Handle staff user requirements
 	if req.UserType == "staff" {
 		if req.EmployeeID == nil {
@@ -113,6 +116,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			ID:       *req.EmployeeID,
 			TenantID: tenantID,
 		})
+
 		if err != nil {
 			utils.HandleDBError(w, err, "GetEmployeeByID", "Employee not found")
 			return
@@ -130,9 +134,9 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		// }
 	}
 
-	// Handle guest user (should not have employeeId)
-	if req.UserType == "guest" && req.EmployeeID != nil {
-		utils.ErrorResponse(w, http.StatusBadRequest, "employeeId should not be provided for guest users")
+	// Handle external user (should not have employeeId)
+	if req.UserType == "external" && req.EmployeeID != nil {
+		utils.ErrorResponse(w, http.StatusBadRequest, "employeeId should not be provided for external users")
 		return
 	}
 
@@ -172,7 +176,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle permissions override if provided
-	if req.PermissionsOverride != nil && len(req.PermissionsOverride) > 0 {
+	if len(req.PermissionsOverride) > 0 {
 		// Validate the permissions format
 		var permissions []utils.PermissionNode
 		if err := json.Unmarshal(req.PermissionsOverride, &permissions); err != nil {
@@ -211,6 +215,29 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		utils.HandleDBError(w, err, "CreateUser")
+		return
+	}
+
+	// Determine full name based on user type
+	var fullName string
+	timezone := "UTC"
+	if req.UserType == "staff" && employee != nil {
+		fullName = employee.FirstName + " " + employee.LastName
+	} else {
+		fullName = req.Username
+	}
+
+	// Create profile in same transaction
+
+	_, err = qtx.CreateUserProfile(r.Context(), database.CreateUserProfileParams{
+		UserID:   user.ID,
+		TenantID: tenantID,
+		FullName: &fullName,
+		Timezone: &timezone, // Default timezone
+	})
+	if err != nil {
+		log.Printf("Failed to create user profile: %v", err)
+		utils.HandleDBError(w, err, "CreateUserProfile")
 		return
 	}
 
@@ -308,7 +335,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	utils.PaginatedResponse(w, http.StatusOK, users, "Users retrieved successfully", page, pageSize, int(totalCount))
 }
@@ -344,6 +371,7 @@ func (h *Handler) GetUserById(w http.ResponseWriter, r *http.Request) {
 		TenantID:      user.TenantID,
 		IsLocked:      user.IsLocked,
 		EmailVerified: user.EmailVerified,
+		RoleID:        user.RoleID,
 		CreatedAt:     user.CreatedAt,
 		UpdatedAt:     user.UpdatedAt,
 	}
@@ -424,23 +452,45 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	permissionsOverride := currentUser.PermissionsOverride
+	if req.PermissionsOverride != nil {
+		trimmed := string(req.PermissionsOverride)
+
+		if trimmed == "null" || trimmed == "" {
+			// Explicit null → clear override
+			permissionsOverride = nil
+		} else {
+			// Validate it's a proper JSON array of PermissionNode
+			var test []utils.PermissionNode
+			if err := json.Unmarshal(req.PermissionsOverride, &test); err != nil {
+				utils.ErrorResponse(w, http.StatusBadRequest,
+					"Invalid permissionsOverride format: must be a JSON array")
+				return
+			}
+			ptr := req.PermissionsOverride
+			permissionsOverride = &ptr
+		}
+	}
+
 	// Build update params
 	updateParams := database.UpdateUserParams{
-		ID:                 userID,
-		Username:           currentUser.Username,
-		Email:              currentUser.Email,
-		LastLogin:          currentUser.LastLogin,
-		LoginAttempts:      currentUser.LoginAttempts,
-		IsLocked:           currentUser.IsLocked,
-		LockedUntil:        currentUser.LockedUntil,
-		PasswordResetToken: currentUser.PasswordResetToken,
-		TokenExpiry:        currentUser.TokenExpiry,
-		MustChangePassword: currentUser.MustChangePassword,
-		EmailVerified:      currentUser.EmailVerified,
-		MfaEnabled:         currentUser.MfaEnabled,
-		LastPasswordChange: currentUser.LastPasswordChange,
-		UserType:           currentUser.UserType,
-		TenantID:           currentUser.TenantID,
+		ID:                  userID,
+		Username:            currentUser.Username,
+		Email:               currentUser.Email,
+		LastLogin:           currentUser.LastLogin,
+		LoginAttempts:       currentUser.LoginAttempts,
+		IsLocked:            currentUser.IsLocked,
+		LockedUntil:         currentUser.LockedUntil,
+		PasswordResetToken:  currentUser.PasswordResetToken,
+		TokenExpiry:         currentUser.TokenExpiry,
+		MustChangePassword:  currentUser.MustChangePassword,
+		EmailVerified:       currentUser.EmailVerified,
+		MfaEnabled:          currentUser.MfaEnabled,
+		LastPasswordChange:  currentUser.LastPasswordChange,
+		UserType:            currentUser.UserType,
+		TenantID:            currentUser.TenantID,
+		RoleID:              req.RoleID,
+		PermissionsOverride: permissionsOverride,
 	}
 
 	if req.Username != nil {

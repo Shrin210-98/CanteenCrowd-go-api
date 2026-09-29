@@ -2,7 +2,6 @@ package users
 
 import (
 	"net/http"
-	"time"
 
 	"ccms.com/api/internal/constants"
 	"ccms.com/api/internal/utils"
@@ -20,7 +19,7 @@ func (h *Handler) GetDefaultPermissionsByUserType(w http.ResponseWriter, r *http
 	validTypes := map[string]bool{
 		constants.UserTypeTenantOwner: true,
 		constants.UserTypeStaff:       true,
-		constants.UserTypeGuest:       true,
+		constants.UserTypeExternal:    true,
 	}
 
 	if !validTypes[userType] {
@@ -38,13 +37,11 @@ func (h *Handler) GetDefaultPermissionsByUserType(w http.ResponseWriter, r *http
 		permissions = constants.DefaultTenantOwnerPermissions()
 	case constants.UserTypeStaff:
 		permissions = constants.DefaultStaffPermissions()
-	case constants.UserTypeGuest:
-		permissions = constants.DefaultGuestPermissions()
+	case constants.UserTypeExternal:
+		permissions = constants.DefaultExternalPermissions()
 	default:
-		permissions = constants.DefaultGuestPermissions()
+		permissions = constants.DefaultExternalPermissions()
 	}
-
-	time.Sleep(3 * time.Second)
 
 	utils.JsonResponse(w, http.StatusOK, permissions)
 }

@@ -81,7 +81,11 @@ func NewServer() *http.Server {
 			return
 		}
 		// Protected Routes with Authenticaction
-		MiddlewareChain(CORSMiddleware, RequestLoggerMiddleware, RequireAuthMiddleware)(mux).ServeHTTP(w, r)
+		MiddlewareChain(
+			CORSMiddleware,
+			RequestLoggerMiddleware,
+			RequireAuthMiddleware(queries, jwtSecret),
+		)(mux).ServeHTTP(w, r)
 	})
 
 	// -- HTTP Server Instance --

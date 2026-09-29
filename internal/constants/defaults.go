@@ -19,7 +19,7 @@ const (
 	// User types
 	UserTypeTenantOwner = "tenant_owner"
 	UserTypeStaff       = "staff"
-	UserTypeGuest       = "guest"
+	UserTypeExternal    = "external"
 
 	// Tenant plans
 	PlanFree       = "free"
@@ -32,7 +32,7 @@ const (
 var AllowedUserTypes = []string{
 	UserTypeTenantOwner,
 	UserTypeStaff,
-	UserTypeGuest,
+	UserTypeExternal,
 }
 
 // Allowed tenant plans
@@ -41,4 +41,46 @@ var AllowedTenantPlans = []string{
 	PlanBasic,
 	PlanPremium,
 	PlanEnterprise,
+}
+
+var DefaultDepartments = []struct {
+	Name           string
+	Description    string
+	DepartmentType string // 'operational', 'support', 'management'
+}{
+	{
+		Name:           "Management",
+		Description:    "Management and administration",
+		DepartmentType: "management",
+	},
+	{
+		Name:           "Kitchen",
+		Description:    "Food preparation and cooking",
+		DepartmentType: "operational",
+	},
+	{
+		Name:           "Service",
+		Description:    "Customer service and front desk",
+		DepartmentType: "operational",
+	},
+	{
+		Name:           "IT Support",
+		Description:    "Technical support and maintenance",
+		DepartmentType: "support", // Support department
+	},
+	{
+		Name:           "Human Resources",
+		Description:    "HR, leave, and employee relations",
+		DepartmentType: "support", // Support department
+	},
+	{
+		Name:           "Finance",
+		Description:    "Accounts, payroll, and expenses",
+		DepartmentType: "support", // Support department
+	},
+	{
+		Name:           "General Support",
+		Description:    "General queries and assistance",
+		DepartmentType: "support", // Support department
+	},
 }
