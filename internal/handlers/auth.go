@@ -198,7 +198,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		firstName = req.Username
 	}
 
-	ownerEmployee, err := qtx.CreateEmployee(r.Context(), database.CreateEmployeeParams{
+	_, err = qtx.CreateEmployee(r.Context(), database.CreateEmployeeParams{
 		TenantID:     tenant.ID,
 		UserID:       &user.ID,
 		FirstName:    firstName,
@@ -214,20 +214,15 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = qtx.LinkUserToEmployee(r.Context(), database.LinkUserToEmployeeParams{
-		ID:       ownerEmployee.ID,
-		UserID:   &user.ID,
-		TenantID: tenant.ID,
-	})
-	if err != nil {
-		utils.HandleDBError(w, err, "LinkUserToEmployee")
-		return
-	}
-
-	if err := tx.Commit(r.Context()); err != nil {
-		utils.HandleDBError(w, err, "CommitTransaction")
-		return
-	}
+	// _, err = qtx.LinkUserToEmployee(r.Context(), database.LinkUserToEmployeeParams{
+	// 	ID:       ownerEmployee.ID,
+	// 	UserID:   &user.ID,
+	// 	TenantID: tenant.ID,
+	// })
+	// if err != nil {
+	// 	utils.HandleDBError(w, err, "LinkUserToEmployee")
+	// 	return
+	// }
 
 	// Commit transaction
 	if err := tx.Commit(r.Context()); err != nil {
