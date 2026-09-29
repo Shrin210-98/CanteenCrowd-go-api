@@ -335,8 +335,6 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	time.Sleep(2 * time.Second)
-
 	utils.PaginatedResponse(w, http.StatusOK, users, "Users retrieved successfully", page, pageSize, int(totalCount))
 }
 
