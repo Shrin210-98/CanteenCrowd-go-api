@@ -59,6 +59,7 @@ func registerRoutesV1(mux *http.ServeMux, h *handlers.Handler) {
 		{"PUT    /employees", h.Employees.UpdateEmployee, "employees.edit"},
 		{"DELETE /employees/{id}", h.Employees.DeleteEmployee, "employees.delete"},
 		{"GET    /employees/{id}", h.Employees.GetEmployeeById, "employees"},
+		{"GET    /employees/search", h.Employees.SearchEmployees, "employees"},
 
 		{"GET    /employees/hierarchy", h.Employees.GetHierarchy, "employees"},
 		{"PUT    /employees/hierarchy", h.Employees.UpdateHierarchy, "employees"},

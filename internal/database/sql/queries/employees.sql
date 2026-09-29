@@ -181,15 +181,19 @@ AND
      OR e.email ILIKE '%' || @search::text || '%'
      OR @search::text = '')
 AND
-    (e.department_id = @department_id OR @department_id IS NULL)
+    (e.department_id = sqlc.narg(department_id) OR sqlc.narg(department_id) IS NULL)
 AND
-    (e.position_id = @position_id OR @position_id IS NULL)
+    (e.position_id = sqlc.narg(position_id) OR sqlc.narg(position_id) IS NULL)
 AND
-    (e.is_active = @is_active OR @is_active IS NULL)
+    (e.is_active = sqlc.narg(is_active)::boolean OR sqlc.narg(is_active) IS NULL)
 AND
-    (e.hire_date >= @hire_date_start OR @hire_date_start IS NULL)
+    (e.hire_date >= sqlc.narg(hire_date_start) OR sqlc.narg(hire_date_start) IS NULL)
 AND
-    (e.hire_date <= @hire_date_end OR @hire_date_end IS NULL)
+    (e.hire_date <= sqlc.narg(hire_date_end) OR sqlc.narg(hire_date_end) IS NULL)
+AND
+    (e.salary >= sqlc.narg(salary_min) OR sqlc.narg(salary_min) IS NULL)
+AND
+    (e.salary <= sqlc.narg(salary_max) OR sqlc.narg(salary_max) IS NULL)
 ORDER BY e.created_at DESC
 LIMIT @limit_count OFFSET @offset_count;
 
@@ -203,15 +207,19 @@ AND
      OR e.email ILIKE '%' || @search::text || '%'
      OR @search::text = '')
 AND
-    (e.department_id = @department_id OR @department_id IS NULL)
+    (e.department_id = sqlc.narg(department_id) OR sqlc.narg(department_id) IS NULL)
 AND
-    (e.position_id = @position_id OR @position_id IS NULL)
+    (e.position_id = sqlc.narg(position_id) OR sqlc.narg(position_id) IS NULL)
 AND
-    (e.is_active = @is_active OR @is_active IS NULL)
+    (e.is_active = sqlc.narg(is_active)::boolean OR sqlc.narg(is_active) IS NULL)
 AND
-    (e.hire_date >= @hire_date_start OR @hire_date_start IS NULL)
+    (e.hire_date >= sqlc.narg(hire_date_start) OR sqlc.narg(hire_date_start) IS NULL)
 AND
-    (e.hire_date <= @hire_date_end OR @hire_date_end IS NULL);
+    (e.hire_date <= sqlc.narg(hire_date_end) OR sqlc.narg(hire_date_end) IS NULL)
+AND
+    (e.salary >= sqlc.narg(salary_min) OR sqlc.narg(salary_min) IS NULL)
+AND
+    (e.salary <= sqlc.narg(salary_max) OR sqlc.narg(salary_max) IS NULL);
 
 -- name: CountEmployeesInDepartment :one
 SELECT COUNT(*) FROM employees 

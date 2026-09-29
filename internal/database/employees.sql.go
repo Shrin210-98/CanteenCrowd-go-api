@@ -99,21 +99,27 @@ AND
 AND
     (e.position_id = $4 OR $4 IS NULL)
 AND
-    (e.is_active = $5 OR $5 IS NULL)
+    (e.is_active = $5::boolean OR $5 IS NULL)
 AND
     (e.hire_date >= $6 OR $6 IS NULL)
 AND
     (e.hire_date <= $7 OR $7 IS NULL)
+AND
+    (e.salary >= $8 OR $8 IS NULL)
+AND
+    (e.salary <= $9 OR $9 IS NULL)
 `
 
 type CountSearchEmployeesParams struct {
-	TenantID      uuid.UUID `json:"tenantId"`
-	Search        string    `json:"search"`
-	DepartmentID  uuid.UUID `json:"departmentId"`
-	PositionID    uuid.UUID `json:"positionId"`
-	IsActive      bool      `json:"isActive"`
-	HireDateStart time.Time `json:"hireDateStart"`
-	HireDateEnd   time.Time `json:"hireDateEnd"`
+	TenantID      uuid.UUID      `json:"tenantId"`
+	Search        string         `json:"search"`
+	DepartmentID  *uuid.UUID     `json:"departmentId"`
+	PositionID    *uuid.UUID     `json:"positionId"`
+	IsActive      pgtype.Bool    `json:"isActive"`
+	HireDateStart *time.Time     `json:"hireDateStart"`
+	HireDateEnd   *time.Time     `json:"hireDateEnd"`
+	SalaryMin     pgtype.Numeric `json:"salaryMin"`
+	SalaryMax     pgtype.Numeric `json:"salaryMax"`
 }
 
 func (q *Queries) CountSearchEmployees(ctx context.Context, arg CountSearchEmployeesParams) (int64, error) {
@@ -125,6 +131,8 @@ func (q *Queries) CountSearchEmployees(ctx context.Context, arg CountSearchEmplo
 		arg.IsActive,
 		arg.HireDateStart,
 		arg.HireDateEnd,
+		arg.SalaryMin,
+		arg.SalaryMax,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -1339,25 +1347,31 @@ AND
 AND
     (e.position_id = $4 OR $4 IS NULL)
 AND
-    (e.is_active = $5 OR $5 IS NULL)
+    (e.is_active = $5::boolean OR $5 IS NULL)
 AND
     (e.hire_date >= $6 OR $6 IS NULL)
 AND
     (e.hire_date <= $7 OR $7 IS NULL)
+AND
+    (e.salary >= $8 OR $8 IS NULL)
+AND
+    (e.salary <= $9 OR $9 IS NULL)
 ORDER BY e.created_at DESC
-LIMIT $9 OFFSET $8
+LIMIT $11 OFFSET $10
 `
 
 type SearchEmployeesParams struct {
-	TenantID      uuid.UUID `json:"tenantId"`
-	Search        string    `json:"search"`
-	DepartmentID  uuid.UUID `json:"departmentId"`
-	PositionID    uuid.UUID `json:"positionId"`
-	IsActive      bool      `json:"isActive"`
-	HireDateStart time.Time `json:"hireDateStart"`
-	HireDateEnd   time.Time `json:"hireDateEnd"`
-	OffsetCount   int32     `json:"offsetCount"`
-	LimitCount    int32     `json:"limitCount"`
+	TenantID      uuid.UUID      `json:"tenantId"`
+	Search        string         `json:"search"`
+	DepartmentID  *uuid.UUID     `json:"departmentId"`
+	PositionID    *uuid.UUID     `json:"positionId"`
+	IsActive      pgtype.Bool    `json:"isActive"`
+	HireDateStart *time.Time     `json:"hireDateStart"`
+	HireDateEnd   *time.Time     `json:"hireDateEnd"`
+	SalaryMin     pgtype.Numeric `json:"salaryMin"`
+	SalaryMax     pgtype.Numeric `json:"salaryMax"`
+	OffsetCount   int32          `json:"offsetCount"`
+	LimitCount    int32          `json:"limitCount"`
 }
 
 type SearchEmployeesRow struct {
@@ -1394,6 +1408,8 @@ func (q *Queries) SearchEmployees(ctx context.Context, arg SearchEmployeesParams
 		arg.IsActive,
 		arg.HireDateStart,
 		arg.HireDateEnd,
+		arg.SalaryMin,
+		arg.SalaryMax,
 		arg.OffsetCount,
 		arg.LimitCount,
 	)

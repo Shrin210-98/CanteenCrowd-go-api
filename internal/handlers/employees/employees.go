@@ -300,19 +300,67 @@ func (h *Handler) SearchEmployees(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queryParams := r.URL.Query()
-	limit, _ := strconv.Atoi(queryParams.Get("limit"))
-	offset, _ := strconv.Atoi(queryParams.Get("offset"))
-	if limit == 0 {
+	q := r.URL.Query()
+
+	// Pagination
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	if limit <= 0 {
 		limit = 20
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
-	search := queryParams.Get("q")
+	// Search
+	search := q.Get("q")
 
-	// Get total count
+	// Department filter
+	var departmentID *uuid.UUID
+	if v := q.Get("department_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			departmentID = &id
+		}
+	}
+
+	// Position filter
+	var positionID *uuid.UUID
+	if v := q.Get("position_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			positionID = &id
+		}
+	}
+
+	// Status filter (is_active)
+	var isActiveParam pgtype.Bool
+	if v := q.Get("is_active"); v != "" {
+		isActiveParam = pgtype.Bool{
+			Bool:  v == "true" || v == "1",
+			Valid: true,
+		}
+	}
+	// Hire date range
+	var hireDateStart *time.Time
+	if v := q.Get("hire_date_start"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			hireDateStart = &t
+		}
+	}
+	var hireDateEnd *time.Time
+	if v := q.Get("hire_date_end"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			hireDateEnd = &t
+		}
+	}
+
 	totalCount, err := h.db.CountSearchEmployees(r.Context(), database.CountSearchEmployeesParams{
-		TenantID: tenantID,
-		Search:   search,
+		TenantID:      tenantID,
+		Search:        search,
+		DepartmentID:  departmentID,
+		PositionID:    positionID,
+		IsActive:      isActiveParam,
+		HireDateStart: hireDateStart,
+		HireDateEnd:   hireDateEnd,
 	})
 	if err != nil {
 		log.Printf("Error counting employees: %v", err)
@@ -323,12 +371,17 @@ func (h *Handler) SearchEmployees(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := int64(math.Ceil(float64(totalCount) / float64(limit)))
 
-	// Get employees
+	// Fetch
 	employees, err := h.db.SearchEmployees(r.Context(), database.SearchEmployeesParams{
-		TenantID:    tenantID,
-		LimitCount:  int32(limit),
-		OffsetCount: int32(offset),
-		Search:      search,
+		TenantID:      tenantID,
+		LimitCount:    int32(limit),
+		OffsetCount:   int32(offset),
+		Search:        search,
+		DepartmentID:  departmentID,
+		PositionID:    positionID,
+		IsActive:      isActiveParam,
+		HireDateStart: hireDateStart,
+		HireDateEnd:   hireDateEnd,
 	})
 	if err != nil {
 		log.Printf("Error searching employees: %v", err)
