@@ -2,6 +2,9 @@
 # CanteenCrowd-go-api
 
 **Simplify workforce management with type-safe SQL and granular RBAC in a multi-tenant system — powered by Go, PostgreSQL, and React**
+> 📦 **Old version deployed in AWS** → [canteen-crowd-react-app.vercel.app](https://canteen-crowd-react-app.vercel.app/)
+>
+> 🚀 **Latest version with Ai integration** → [app.ccms-suite.com](https://app.ccms-suite.com)
 
 ## Tech Stack
 
